@@ -1,0 +1,16 @@
+{
+  "name": "Minecraft Dashboard",
+  "short_name": "MC Dash",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "description": "Minecraft server management dashboard",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect fill='%232d6a4f' width='100' height='100' rx='20'/><text x='50' y='68' text-anchor='middle' font-size='50' font-family='sans-serif' fill='white'>MC</text></svg>",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

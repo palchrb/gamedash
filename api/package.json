@@ -1,0 +1,19 @@
+{
+  "name": "mc-dashboard-api",
+  "version": "3.0.0",
+  "description": "Multi-game server management API + per-user knock PWA",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.0",
+    "express": "^4.18.0",
+    "express-rate-limit": "^7.1.0",
+    "fs-extra": "^11.0.0",
+    "http-proxy-middleware": "^3.0.5",
+    "multer": "^2.0.1",
+    "rcon-client": "^4.2.4"
+  }
+}

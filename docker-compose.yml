@@ -1,0 +1,149 @@
+# Multi-game dashboard stack.
+#
+# This compose runs a Minecraft server, the dashboard API + PWA, and a small
+# privileged sidecar (ufw-agent) used to drive UFW + read kernel state
+# (ss / conntrack) on the host.
+#
+# Adding more games:
+#
+#   Option A — same compose: add more service blocks here (e.g. mc2, impostor)
+#   and a matching block in ./data/services.json. Restart the dashboard.
+#
+#   Option B — separate compose per game (recommended for non-trivial setups):
+#   create the docker network ONCE on the host:
+#
+#       docker network create mc-shared
+#
+#   then declare it as `external: true` in BOTH this compose and each game's
+#   own compose, joining all containers to the same network. The dashboard
+#   resolves each service via its container name (set as `rcon.host` and
+#   `container` in services.json), so the games can live in any compose file
+#   on the same host. The ufw-agent + dashboard still need to run somewhere,
+#   but games can be added/removed independently.
+
+services:
+  mc:
+    image: itzg/minecraft-server:latest
+    container_name: mc1
+    tty: true
+    stdin_open: true
+    restart: unless-stopped
+    ports:
+      - "25565:25565"
+      - "19132:19132/udp"
+    environment:
+      EULA: "TRUE"
+      TYPE: "PAPER"
+      MEMORY: "4096M"
+      MAX_PLAYERS: "40"
+      TZ: "Europe/Oslo"
+      ENFORCE_SECURE_PROFILE: "FALSE"
+      # RCON for dashboard API
+      ENABLE_RCON: "true"
+      RCON_PORT: "25575"
+      RCON_PASSWORD: "${RCON_PASSWORD:-changeme}"
+    volumes:
+      - ./data:/data
+    networks:
+      - mcnet
+
+  # Example second Minecraft instance — uncomment to enable.
+  # Also add a matching block in ./data/services.json with id "mc2".
+  #
+  # mc2:
+  #   image: itzg/minecraft-server:latest
+  #   container_name: mc2
+  #   restart: unless-stopped
+  #   ports:
+  #     - "25566:25565"
+  #   environment:
+  #     EULA: "TRUE"
+  #     TYPE: "PAPER"
+  #     ENABLE_RCON: "true"
+  #     RCON_PORT: "25575"
+  #     RCON_PASSWORD: "${RCON_PASSWORD_MC2:-changeme}"
+  #   volumes:
+  #     - ./data-mc2:/data
+  #   networks:
+  #     - mcnet
+
+  # Example Among Us (Impostor) container — uncomment + add to services.json.
+  #
+  # impostor:
+  #   image: impostor/impostor-server:latest
+  #   container_name: impostor
+  #   restart: unless-stopped
+  #   ports:
+  #     - "22023:22023/tcp"
+  #     - "22023:22023/udp"
+  #   volumes:
+  #     - ./data-impostor:/app/config
+  #   networks:
+  #     - mcnet
+
+  dashboard:
+    image: ghcr.io/palchrb/minecraft-dashboard:latest
+    # Or build locally:
+    # build: ./api
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+      - "${KNOCK_PORT:-8100}:${KNOCK_PORT:-8100}"
+    environment:
+      # Legacy single-MC env vars (still respected; auto-seed services.json
+      # on first boot if no services.json exists yet).
+      RCON_HOST: mc
+      RCON_PORT: "25575"
+      RCON_PASSWORD: "${RCON_PASSWORD:-changeme}"
+      MC_CONTAINER: mc1
+      MC_LOG_FILE: /mcdata/logs/latest.log
+      TZ: "Europe/Oslo"
+      BLUEMAP_HOST: "${BLUEMAP_HOST:-mc:8100}"
+      KNOCK_PORT: "${KNOCK_PORT:-8100}"
+      KNOCK_IGNORE_RANGES: "${KNOCK_IGNORE_RANGES:-100.64.0.0/10}"
+      KNOCK_AUTO_APPROVE: "${KNOCK_AUTO_APPROVE:-false}"
+      # Per-user knock settings
+      KNOCK_USER_TTL_HOURS: "${KNOCK_USER_TTL_HOURS:-24}"
+      DEFAULT_SERVICE_ID: "${DEFAULT_SERVICE_ID:-mc1}"
+      # If you add multiple Minecraft instances, expose their RCON passwords
+      # here as well so the registry can pick them up via passwordEnv.
+      # RCON_PASSWORD_MC2: "${RCON_PASSWORD_MC2:-changeme}"
+      #
+      # i18n: default UI language. v1 ships only en.json — drop additional
+      # JSON files in /app/locales/ to add more (or mount your own folder).
+      DEFAULT_LOCALE: "${DEFAULT_LOCALE:-en}"
+    volumes:
+      - ./data:/mcdata
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - mc
+    networks:
+      - mcnet
+
+  ufw-agent:
+    image: alpine:latest
+    container_name: ufw-agent
+    command: ["sleep", "infinity"]
+    pid: host
+    privileged: true
+    restart: unless-stopped
+    # NOTE: Because we use `nsenter -t 1 -m`, the agent runs `ss` / `conntrack`
+    # / `ufw` from the HOST filesystem, not from this alpine image. Make sure
+    # the host has:
+    #   - iproute2  (gives `ss`, almost always preinstalled)
+    #   - ufw       (firewall, required)
+    #   - conntrack (needed for UDP smart-revoke + UDP playtime stats);
+    #                install with `sudo apt install conntrack` on Debian/Ubuntu
+    # The dashboard degrades gracefully if conntrack is missing — only UDP
+    # game detection (Bedrock 19132, Among Us, Voice Chat 24454) is affected.
+
+networks:
+  mcnet:
+    driver: bridge
+    # To share this network with other compose files (so games can live in
+    # their own compose), uncomment the next two lines and create the network
+    # manually with `docker network create mc-shared`, then declare the same
+    # `external: true` block in each game's compose:
+    #
+    # external: true
+    # name: mc-shared

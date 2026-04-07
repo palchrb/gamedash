@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="manifest" href="manifest.json">
+  <title data-i18n="header.title">Game Dashboard</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1 data-i18n="header.title">Game Dashboard</h1>
+      <div class="header-right">
+        <select id="service-select" class="service-select" title="Service"></select>
+        <div id="status-badge" class="badge badge-offline" data-i18n="header.offline">Offline</div>
+      </div>
+    </header>
+
+    <!-- Server Status -->
+    <section class="card">
+      <h2>Server Status</h2>
+      <div class="status-grid">
+        <div class="stat">
+          <span class="stat-label">Status</span>
+          <span id="server-status" class="stat-value">--</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">Players Online</span>
+          <span id="player-count" class="stat-value">0</span>
+        </div>
+        <div class="stat">
+          <span class="stat-label">RCON</span>
+          <span id="rcon-status" class="stat-value">--</span>
+        </div>
+      </div>
+      <div id="player-list" class="player-list"></div>
+    </section>
+
+    <!-- Server Controls -->
+    <section class="card">
+      <h2>Server Controls</h2>
+      <div class="btn-group">
+        <button onclick="serverAction('start')" class="btn btn-green">Start Server</button>
+        <button onclick="serverAction('stop')" class="btn btn-red">Stop Server</button>
+        <button onclick="serverAction('backup')" class="btn btn-blue">Backup World</button>
+      </div>
+    </section>
+
+    <!-- Gamemode -->
+    <section class="card">
+      <h2>Gamemode (all players)</h2>
+      <div class="btn-group">
+        <button onclick="setGamemode('survival')" class="btn">Survival</button>
+        <button onclick="setGamemode('creative')" class="btn">Creative</button>
+        <button onclick="setGamemode('adventure')" class="btn">Adventure</button>
+        <button onclick="setGamemode('spectator')" class="btn">Spectator</button>
+      </div>
+    </section>
+
+    <!-- RCON Command -->
+    <section class="card">
+      <h2>RCON Command</h2>
+      <div class="input-group">
+        <input type="text" id="rcon-cmd" placeholder="e.g. time set day" onkeydown="if(event.key==='Enter')sendCommand()">
+        <button onclick="sendCommand()" class="btn btn-blue">Send</button>
+      </div>
+      <pre id="cmd-output" class="output"></pre>
+    </section>
+
+    <!-- Whitelist -->
+    <section class="card">
+      <h2>Whitelist</h2>
+      <div class="input-group">
+        <input type="text" id="whitelist-player" placeholder="Player name">
+        <button onclick="whitelistAction('add')" class="btn btn-green">Add</button>
+        <button onclick="whitelistAction('remove')" class="btn btn-red">Remove</button>
+      </div>
+      <button onclick="showWhitelist()" class="btn btn-sm">Show Whitelist</button>
+      <pre id="whitelist-output" class="output"></pre>
+    </section>
+
+    <!-- OP Management -->
+    <section class="card">
+      <h2>OP Management</h2>
+      <div class="input-group">
+        <input type="text" id="op-player" placeholder="Player name">
+        <button onclick="opAction('op')" class="btn btn-green">OP</button>
+        <button onclick="opAction('deop')" class="btn btn-red">De-OP</button>
+      </div>
+    </section>
+
+    <!-- Firewall (IP Allowlist) -->
+    <section class="card">
+      <h2>Firewall (IP Allowlist)</h2>
+      <p class="card-desc">Manage which IPs can connect to Java (25565), Bedrock (19132), and Voice (24454).</p>
+      <div class="btn-group" style="margin-bottom:12px">
+        <button onclick="allowMyIp()" class="btn btn-green">Allow My IP</button>
+        <button onclick="loadFirewallRules()" class="btn btn-sm">Refresh</button>
+      </div>
+      <div class="input-group">
+        <input type="text" id="firewall-ip" placeholder="IP address (e.g. 203.0.113.45)">
+        <input type="text" id="firewall-label" placeholder="Label (optional)" style="max-width:140px">
+        <button onclick="addFirewallIp()" class="btn btn-green">Add</button>
+      </div>
+      <ul id="firewall-list" class="firewall-list"></ul>
+
+      <h3>Pending Knocks</h3>
+      <p class="card-desc">New IPs that visited the map. Approve to grant access.</p>
+      <button onclick="loadKnocks()" class="btn btn-sm" style="margin-bottom:8px">Refresh</button>
+      <ul id="knocks-list" class="firewall-list"></ul>
+
+      <h3>Recent Connection Attempts</h3>
+      <p class="card-desc">IPs blocked by UFW on MC ports in the last 5 minutes.</p>
+      <button onclick="loadAttempts()" class="btn btn-sm" style="margin-bottom:8px">Refresh</button>
+      <ul id="attempts-list" class="firewall-list"></ul>
+    </section>
+
+    <!-- World Management -->
+    <section class="card">
+      <h2>Worlds</h2>
+      <div class="world-current">
+        Active world: <strong id="current-world">--</strong>
+      </div>
+      <div class="btn-group" style="margin-bottom:12px">
+        <button onclick="loadWorlds()" class="btn btn-sm">Refresh</button>
+        <button onclick="saveCurrentWorld()" class="btn btn-sm btn-blue">Save Current</button>
+      </div>
+      <ul id="world-list" class="world-list"></ul>
+
+      <h3>New World</h3>
+      <div class="input-group">
+        <input type="text" id="new-world-name" placeholder="World name">
+        <button onclick="createNewWorld()" class="btn btn-green">Generate</button>
+      </div>
+
+      <h3>Upload World (.zip)</h3>
+      <div class="input-group">
+        <input type="file" id="world-file" accept=".zip" class="file-input">
+        <button onclick="uploadWorld()" class="btn btn-blue">Upload</button>
+      </div>
+    </section>
+
+    <!-- Backups -->
+    <section class="card">
+      <h2>Backups</h2>
+      <button onclick="listBackups()" class="btn btn-sm">Refresh</button>
+      <ul id="backup-list" class="backup-list"></ul>
+    </section>
+
+    <!-- Server Log -->
+    <section class="card">
+      <h2 data-i18n="card.log">Server Log</h2>
+      <button onclick="loadLogs()" class="btn btn-sm" data-i18n="common.refresh">Refresh</button>
+      <pre id="log-output" class="output log-output"></pre>
+    </section>
+
+    <!-- Users (per-child knock links) -->
+    <section class="card">
+      <h2 data-i18n="card.users">Users</h2>
+      <p class="card-desc" data-i18n="users.no_users">Add users below to generate personal knock links.</p>
+      <div class="input-group">
+        <input type="text" id="user-name" placeholder="Child's name (e.g. Lars)">
+        <button onclick="addUser()" class="btn btn-green" data-i18n="btn.add_user">Add user</button>
+      </div>
+      <ul id="user-list" class="user-list"></ul>
+    </section>
+
+    <!-- Active sessions -->
+    <section class="card">
+      <h2 data-i18n="card.active_sessions">Who is playing now</h2>
+      <button onclick="loadActiveSessions()" class="btn btn-sm" data-i18n="common.refresh">Refresh</button>
+      <ul id="active-sessions-list" class="firewall-list"></ul>
+    </section>
+
+    <!-- Stats -->
+    <section class="card">
+      <h2 data-i18n="card.stats">Playtime statistics</h2>
+      <button onclick="loadStatsLeaderboard()" class="btn btn-sm" data-i18n="common.refresh">Refresh</button>
+      <ul id="stats-leaderboard" class="stats-list"></ul>
+    </section>
+
+    <!-- Notification area -->
+    <div id="toast" class="toast"></div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
