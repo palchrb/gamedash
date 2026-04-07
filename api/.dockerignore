@@ -1,5 +1,11 @@
 node_modules
-npm-debug.log
-.env
+dist
+coverage
 .git
 .gitignore
+.env
+.env.*
+npm-debug.log
+*.md
+src/**/*.test.ts
+vitest.config.ts

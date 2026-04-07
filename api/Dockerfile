@@ -1,15 +1,36 @@
-FROM node:20-alpine
+# syntax=docker/dockerfile:1.6
 
-# Install docker CLI for start/stop of MC container
-RUN apk add --no-cache docker-cli unzip
-
+# ---- builder ---------------------------------------------------------------
+FROM node:20-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev 2>/dev/null || npm install --omit=dev
+RUN npm ci
 
-COPY . .
+COPY tsconfig.json ./
+COPY src ./src
+RUN npx tsc
+
+# Drop dev deps for the runtime image
+RUN npm prune --omit=dev
+
+# ---- runtime ---------------------------------------------------------------
+FROM node:20-alpine AS runtime
+
+# docker CLI + unzip (for world uploads) + tini (proper signal handling)
+RUN apk add --no-cache docker-cli unzip tini
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/dist ./dist
+COPY package.json ./
+COPY public ./public
+COPY pwa ./pwa
+COPY locales ./locales
 
 EXPOSE 3000
 
-CMD ["node", "server.js"]
+ENTRYPOINT ["/sbin/tini", "--"]
+CMD ["node", "dist/server.js"]
