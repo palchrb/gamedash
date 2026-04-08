@@ -68,6 +68,10 @@ const ConfigSchema = z.object({
   KNOCK_PASSKEY_REAUTH_HOURS: positiveInt.default("720"),
   KNOCK_REGISTRATION_TTL_HOURS: positiveInt.default("24"),
 
+  // ── Audit log rotation (Phase 4) ───────────────────────────────────────
+  AUDIT_LOG_MAX_BYTES: positiveInt.default("10485760"), // 10 MiB
+  AUDIT_LOG_MAX_FILES: positiveInt.default("5"),
+
   // ── Misc ──────────────────────────────────────────────────────────────
   NODE_ENV: z.enum(["development", "production", "test"]).default("production"),
 });

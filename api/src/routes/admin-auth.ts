@@ -44,6 +44,7 @@ import {
   issueAdminSession,
   readAndRefreshAdminSession,
 } from "../auth/sessions";
+import { adminLogins, authFailures, incCounter } from "../metrics";
 
 const authLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -226,10 +227,12 @@ export function adminAuthRouter(): Router {
           response: body.response,
         });
       } catch (err) {
+        incCounter(authFailures, { kind: "admin" });
         throw new HttpError(401, (err as Error).message);
       }
       await issueAdminSession(res, req, result.adminId);
       await audit({ kind: "admin.login", adminId: result.adminId });
+      incCounter(adminLogins);
       const admin = await findAdminById(result.adminId);
       res.json({
         success: true,

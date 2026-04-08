@@ -30,10 +30,12 @@ import { adminAuthRouter } from "./routes/admin-auth";
 import { firewallRouter } from "./routes/firewall";
 import { i18nRouter } from "./routes/i18n";
 import { knockPwaRouter } from "./routes/knock-pwa";
+import { opsRouter } from "./routes/ops";
 import { publicIpRouter } from "./routes/public-ip";
 import { servicesRouter } from "./routes/services";
 import { statsRouter } from "./routes/stats";
 import { usersRouter } from "./routes/users";
+import { trackHttp } from "./metrics";
 
 export function createApp(): Express {
   const app = express();
@@ -57,11 +59,22 @@ export function createApp(): Express {
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
 
+  // Prometheus HTTP counter — bump on every response we ship.
+  app.use((req, res, next) => {
+    res.on("finish", () => {
+      trackHttp(req.method, res.statusCode);
+    });
+    next();
+  });
+
   // ── Always-public routes ───────────────────────────────────────────
   // Liveness probe
   app.get("/healthz", (_req, res) => {
     res.json({ ok: true, ts: new Date().toISOString() });
   });
+
+  // Readiness probe + /metrics — kept public for orchestrator probes.
+  app.use(opsRouter());
 
   // i18n bootstrap is public so even the login page can be translated.
   app.use(i18nRouter());

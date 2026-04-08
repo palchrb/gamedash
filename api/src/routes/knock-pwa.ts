@@ -48,6 +48,7 @@ import {
   readAndRefreshKnockSession,
 } from "../auth/knock-sessions";
 import { audit } from "../repos/audit";
+import { authFailures, incCounter, knockAttempts, knockLogins } from "../metrics";
 import type { UserRecord } from "../schemas";
 
 const PWA_DIR = path.resolve(__dirname, "..", "..", "pwa");
@@ -90,6 +91,7 @@ async function requireKnockAuthIfEnabled(
   if (!config().KNOCK_REQUIRE_PASSKEY) return;
   const session = await readAndRefreshKnockSession(req, res, token);
   if (!session || session.userId !== user.id) {
+    incCounter(authFailures, { kind: "knock" });
     throw new HttpError(401, "passkey login required");
   }
 }
@@ -205,6 +207,7 @@ export function knockPwaRouter(): Router {
     asyncH(async (req, res) => {
       const user = await userFromToken(req.params["token"]);
       await requireKnockAuthIfEnabled(user, req.params["token"] ?? "", req, res);
+      incCounter(knockAttempts);
 
       const ip = clientIp(req);
       const force = req.query["force"] === "true" || (req.body as { force?: boolean })?.force === true;
@@ -332,6 +335,7 @@ export function knockPwaRouter(): Router {
       try {
         await verifyKnockAuthentication({ user, response: body.response });
       } catch (err) {
+        incCounter(authFailures, { kind: "knock" });
         throw new HttpError(401, (err as Error).message);
       }
       await issueKnockSession(res, req, {
@@ -339,6 +343,7 @@ export function knockPwaRouter(): Router {
         token: req.params["token"] ?? "",
       });
       await audit({ kind: "knock.login", userId: user.id });
+      incCounter(knockLogins);
       res.json({ success: true });
     }),
   );
