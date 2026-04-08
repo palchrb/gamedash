@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.6
 
 # ---- builder ---------------------------------------------------------------
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 WORKDIR /app
 
 COPY package.json package-lock.json* ./
@@ -15,7 +15,7 @@ RUN npx tsc
 RUN npm prune --omit=dev
 
 # ---- runtime ---------------------------------------------------------------
-FROM node:20-alpine AS runtime
+FROM node:22-alpine AS runtime
 
 # docker CLI + unzip (for world uploads) + tini (proper signal handling)
 RUN apk add --no-cache docker-cli unzip tini
