@@ -18,6 +18,7 @@ import { initRegistry, disposeRegistry } from "./services/registry";
 import { statsCollector } from "./stats/collector";
 import { sweepExpiredRules } from "./knock/smart-revoke";
 import { sweepExpiredSessions } from "./repos/admin";
+import { sweepExpiredKnockSessions } from "./repos/knock-sessions";
 
 async function main(): Promise<void> {
   const c = config();
@@ -47,6 +48,9 @@ async function main(): Promise<void> {
     );
     sweepExpiredSessions().catch((err: Error) =>
       log.warn({ err: err.message }, "admin session sweep failed"),
+    );
+    sweepExpiredKnockSessions().catch((err: Error) =>
+      log.warn({ err: err.message }, "knock session sweep failed"),
     );
     sweepChallenges();
   }, 10 * 60 * 1000);

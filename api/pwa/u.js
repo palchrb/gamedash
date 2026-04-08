@@ -20,6 +20,7 @@
   const TOKEN = init.token;
   const USER = init.user || {};
   const SERVICES = init.services || [];
+  const REQUIRE_PASSKEY = !!init.requirePasskey;
   const KEEP_ALIVE_MS = 10 * 60 * 1000;     // re-knock every 10 min while open
   const STATE_REFRESH_MS = 30 * 1000;       // poll active sessions every 30 s
   const STORE_KEY = `knock-pwa:${USER.id || "u"}`;
@@ -56,6 +57,7 @@
   const greeting = $("greeting");
   const status = $("status");
   const knockBtn = $("knock-all");
+  const heroCard = $("hero-card");
   const heroMeta = $("hero-meta");
   const servicesCard = $("services-card");
   const servicesList = $("services-list");
@@ -63,6 +65,11 @@
   const statsSummary = $("stats-summary");
   const statsWeek = $("stats-week");
   const revokeBtn = $("revoke");
+  const authCard = $("auth-card");
+  const authDesc = $("auth-desc");
+  const authRegisterBtn = $("auth-register");
+  const authLoginBtn = $("auth-login");
+  const authLocked = $("auth-locked");
 
   greeting.textContent = USER.name ? `Hi ${USER.name}!` : "Welcome";
   knockBtn.textContent = t("btn.knock_all");
@@ -340,14 +347,9 @@
     }
   });
 
-  // ---- Auto-knock on launch + keep-alive while open --------------------
-  knockBtn.disabled = false;
-
-  // Fire knock immediately on first load
-  knock("all").catch(() => {});
-
-  // Keep-alive while tab is in foreground
+  // ---- Auth (Phase 3 optional passkey gate) ----------------------------
   let keepAliveTimer = null;
+
   function startKeepAlive() {
     if (keepAliveTimer) return;
     keepAliveTimer = setInterval(() => {
@@ -360,29 +362,157 @@
     if (keepAliveTimer) clearInterval(keepAliveTimer);
     keepAliveTimer = null;
   }
-  startKeepAlive();
 
-  document.addEventListener("visibilitychange", () => {
-    if (document.hidden) {
-      stopKeepAlive();
+  let pwaBooted = false;
+  function bootPwa() {
+    if (pwaBooted) return;
+    pwaBooted = true;
+
+    authCard.hidden = true;
+    heroCard.hidden = false;
+    knockBtn.disabled = false;
+
+    // Fire knock immediately on first load
+    knock("all").catch(() => {});
+
+    startKeepAlive();
+
+    document.addEventListener("visibilitychange", () => {
+      if (document.hidden) {
+        stopKeepAlive();
+      } else {
+        knock("all").catch(() => {});
+        startKeepAlive();
+        refreshActive();
+        refreshState();
+        refreshStats();
+      }
+    });
+
+    setInterval(refreshState, STATE_REFRESH_MS);
+    setInterval(refreshActive, STATE_REFRESH_MS);
+
+    refreshState();
+    refreshActive();
+    refreshStats();
+  }
+
+  function showAuthCard(mode) {
+    heroCard.hidden = true;
+    authCard.hidden = false;
+    authRegisterBtn.hidden = true;
+    authLoginBtn.hidden = true;
+    authLocked.hidden = true;
+    if (mode === "register") {
+      authRegisterBtn.hidden = false;
+      authDesc.textContent = t("knock.auth_desc_register");
+    } else if (mode === "login") {
+      authLoginBtn.hidden = false;
+      authDesc.textContent = t("knock.auth_desc_login");
     } else {
-      // Re-knock when becoming visible again
-      knock("all").catch(() => {});
-      startKeepAlive();
-      refreshActive();
-      refreshState();
-      refreshStats();
+      authLocked.hidden = false;
+      authDesc.textContent = t("knock.auth_desc_locked");
     }
-  });
+  }
 
-  // Periodic state polling
-  setInterval(refreshState, STATE_REFRESH_MS);
-  setInterval(refreshActive, STATE_REFRESH_MS);
+  async function doRegister() {
+    if (!window.webauthnRegister) {
+      showToast(t("knock.webauthn_unsupported"), "error");
+      return;
+    }
+    try {
+      const optsRes = await fetch(`/u/${TOKEN}/webauthn/register/options`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const optsData = await optsRes.json();
+      if (!optsRes.ok || !optsData.success) {
+        throw new Error(optsData.error || "register options failed");
+      }
+      const attestation = await window.webauthnRegister(optsData.options);
+      const verifyRes = await fetch(`/u/${TOKEN}/webauthn/register/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response: attestation }),
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok || !verifyData.success) {
+        throw new Error(verifyData.error || "register verify failed");
+      }
+      showToast(t("knock.auth_registered"), "success");
+      bootPwa();
+    } catch (err) {
+      showToast(err.message || String(err), "error");
+    }
+  }
 
-  // Initial loads
-  refreshState();
-  refreshActive();
-  refreshStats();
+  async function doLogin() {
+    if (!window.webauthnAuthenticate) {
+      showToast(t("knock.webauthn_unsupported"), "error");
+      return;
+    }
+    try {
+      const optsRes = await fetch(`/u/${TOKEN}/webauthn/authenticate/options`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const optsData = await optsRes.json();
+      if (!optsRes.ok || !optsData.success) {
+        throw new Error(optsData.error || "login options failed");
+      }
+      const assertion = await window.webauthnAuthenticate(optsData.options);
+      const verifyRes = await fetch(`/u/${TOKEN}/webauthn/authenticate/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response: assertion }),
+      });
+      const verifyData = await verifyRes.json();
+      if (!verifyRes.ok || !verifyData.success) {
+        throw new Error(verifyData.error || "login verify failed");
+      }
+      showToast(t("knock.auth_signed_in"), "success");
+      bootPwa();
+    } catch (err) {
+      showToast(err.message || String(err), "error");
+    }
+  }
+
+  authRegisterBtn.addEventListener("click", doRegister);
+  authLoginBtn.addEventListener("click", doLogin);
+
+  async function startBoot() {
+    if (!REQUIRE_PASSKEY) {
+      bootPwa();
+      return;
+    }
+    // Ask the server whether we already have a valid knock session. /state
+    // also reports whether a fresh registration window is open, so we can
+    // decide between "register" / "login" / "locked" modes.
+    try {
+      const res = await fetch(`/u/${TOKEN}/state`);
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "state failed");
+      const auth = data.auth || {};
+      if (auth.sessionValid) {
+        bootPwa();
+        return;
+      }
+      if (auth.hasCredentials) {
+        showAuthCard("login");
+      } else if (auth.registrationOpen) {
+        showAuthCard("register");
+      } else {
+        showAuthCard("locked");
+      }
+    } catch (err) {
+      showToast(err.message || String(err), "error");
+      showAuthCard("locked");
+    }
+  }
+
+  startBoot();
 
   // Register service worker (for installability — not required for knock)
   if ("serviceWorker" in navigator) {

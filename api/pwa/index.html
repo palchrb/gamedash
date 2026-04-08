@@ -18,7 +18,23 @@
       <div id="status" class="status">…</div>
     </header>
 
-    <section class="card hero">
+    <section id="auth-card" class="card hero" hidden>
+      <h2 id="auth-title" data-i18n="knock.auth_title">Sign in</h2>
+      <p id="auth-desc" class="meta" data-i18n="knock.auth_desc">
+        This device needs to be approved once before you can play.
+      </p>
+      <button id="auth-register" class="big-btn" hidden data-i18n="knock.auth_register">
+        Register this device
+      </button>
+      <button id="auth-login" class="big-btn" hidden data-i18n="knock.auth_login">
+        Sign in with passkey
+      </button>
+      <p id="auth-locked" class="meta" hidden data-i18n="knock.auth_locked">
+        Ask your parent to open a registration window for this device.
+      </p>
+    </section>
+
+    <section id="hero-card" class="card hero" hidden>
       <button id="knock-all" class="big-btn" disabled>…</button>
       <p id="hero-meta" class="meta"></p>
     </section>
@@ -54,6 +70,7 @@
 
     <div id="toast" class="toast"></div>
   </main>
+  <script src="{{BASE}}/webauthn.js"></script>
   <script src="{{BASE}}/u.js"></script>
 </body>
 </html>

@@ -67,6 +67,12 @@ export interface PublicUser {
   createdAt: string;
   hasCredentials: boolean;
   registrationOpenUntil: string | null;
+  credentials: Array<{
+    id: string;
+    deviceLabel: string | null;
+    createdAt: string;
+    lastUsedAt: string | null;
+  }>;
 }
 
 export function toPublic(u: UserRecord): PublicUser {
@@ -78,6 +84,12 @@ export function toPublic(u: UserRecord): PublicUser {
     createdAt: u.createdAt,
     hasCredentials: u.credentials.length > 0,
     registrationOpenUntil: u.registrationOpenUntil,
+    credentials: u.credentials.map((c) => ({
+      id: c.id,
+      deviceLabel: c.deviceLabel ?? null,
+      createdAt: c.createdAt,
+      lastUsedAt: c.lastUsedAt,
+    })),
   };
 }
 

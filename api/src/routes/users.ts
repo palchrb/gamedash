@@ -16,10 +16,13 @@ import {
   deleteUser,
   findById,
   listUsers,
+  openRegistrationWindow,
+  removeKnockCredential,
   rotateToken,
   toPublic,
   updateUser,
 } from "../repos/users";
+import { deleteKnockSessionsForUser } from "../repos/knock-sessions";
 import { registry } from "../services/registry";
 import {
   deleteRuleByUserId,
@@ -115,6 +118,40 @@ export function usersRouter(): Router {
       if (!id) throw new HttpError(400, "missing id");
       const r = await revokeUser(id);
       res.json({ success: true, ...r });
+    }),
+  );
+
+  // Open a fresh KNOCK_REGISTRATION_TTL_HOURS window so a new device
+  // can enrol a passkey. Closes automatically on first successful
+  // registration (via addKnockCredential in the users repo).
+  router.post(
+    "/api/users/:id/open-registration",
+    asyncH(async (req, res) => {
+      const id = req.params["id"];
+      if (!id) throw new HttpError(400, "missing id");
+      const user = await findById(id);
+      if (!user) throw new HttpError(404, "user not found");
+      const until = await openRegistrationWindow(id);
+      await audit({ kind: "user.open_registration", userId: id, until });
+      res.json({ success: true, registrationOpenUntil: until });
+    }),
+  );
+
+  // Remove a specific knock credential (e.g. lost device). Does not
+  // touch the active firewall rule, but does nuke all sessions for
+  // that user so a browser with a stale cookie stops working.
+  router.delete(
+    "/api/users/:id/credentials/:credId",
+    asyncH(async (req, res) => {
+      const id = req.params["id"];
+      const credId = req.params["credId"];
+      if (!id || !credId) throw new HttpError(400, "missing id");
+      const user = await findById(id);
+      if (!user) throw new HttpError(404, "user not found");
+      await removeKnockCredential(id, credId);
+      await deleteKnockSessionsForUser(id);
+      await audit({ kind: "user.credential_removed", userId: id, credId });
+      res.json({ success: true });
     }),
   );
 
