@@ -139,6 +139,50 @@ vitest. State lives in JSON files under `DATA_DIR` with atomic writes,
 per-file mutex, and schema validation on load. Tokens + session IDs are
 only ever stored as SHA-256 hashes.
 
+## Reverse proxy (Caddy)
+
+Exposing the dashboard on the public internet should always go through
+a reverse proxy that terminates TLS. Caddy is the easiest option —
+here's a minimal `Caddyfile` that fronts a gamedash container running
+on the same host:
+
+```caddyfile
+dash.example.com {
+    encode zstd gzip
+    reverse_proxy localhost:3000
+}
+```
+
+That's all Caddy needs — it will obtain and renew a Let's Encrypt
+certificate automatically, and it sets `X-Forwarded-For` /
+`X-Forwarded-Proto` on every upstream request.
+
+On the gamedash side you then need three env vars in `.env` so
+WebAuthn and the IP allow-list line up with what the browser actually
+sees:
+
+```bash
+ADMIN_RP_ID=dash.example.com
+ADMIN_ORIGIN=https://dash.example.com
+TRUST_PROXY=loopback
+```
+
+- **`ADMIN_RP_ID`** — the bare hostname, no scheme, no port. WebAuthn
+  refuses to register if this doesn't match the address bar exactly.
+- **`ADMIN_ORIGIN`** — the full URL as the browser sees it. `:443` is
+  implied for HTTPS, so do not add it.
+- **`TRUST_PROXY`** — `loopback` is correct when Caddy runs on the
+  same host and proxies over `127.0.0.1`. If Caddy runs in its own
+  container on the Docker bridge, set this to the Caddy container's
+  IP, a CIDR like `172.16.0.0/12`, or `uniquelocal`. Without a
+  correct value, Express sees the proxy's IP and the per-child knock
+  will allow-list the wrong address.
+
+Restart the `dashboard` container after changing any of these. For a
+Caddy-in-Docker setup, add a `caddy` service to `docker-compose.yml`,
+put it on the same `mcnet` network as `dashboard`, and point
+`reverse_proxy` at `dashboard:3000` instead of `localhost:3000`.
+
 ## License
 
 See [LICENSE](LICENSE).
