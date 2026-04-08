@@ -1,10 +1,11 @@
 /**
  * WebAuthn ceremonies for knock PWA users (Phase 3).
  *
- * Parallels admin-passkey.ts but acts on UserRecord + KnockCredential
- * instead of AdminRecord + AdminCredential. The split lets each set of
- * credentials live in its own file and use its own challenge store
- * namespace (`kreg:<userId>` / `kauth:<userId>`).
+ * Parallels admin-passkey.ts but acts on UserRecord (token-bound) instead
+ * of AdminRecord (account-bound). Both share the same WebAuthnCredential
+ * shape; the split lives at the record level because their identity
+ * models differ. Each set uses its own challenge store namespace
+ * (`kreg:<userId>` / `kauth:<userId>`).
  *
  * Registration of new devices is gated by `user.registrationOpenUntil`:
  * an admin opens a short window (default 24 h, configurable via
@@ -29,7 +30,7 @@ import {
   findById,
   updateCredentialCounter,
 } from "../repos/users";
-import type { KnockCredential, UserRecord } from "../schemas";
+import type { UserRecord, WebAuthnCredential } from "../schemas";
 import { putChallenge, takeChallenge } from "./challenges";
 
 function rpID(): string {
@@ -100,7 +101,7 @@ export async function verifyKnockRegistration(params: {
   userId: string;
   response: unknown;
   deviceLabel?: string;
-}): Promise<{ credential: KnockCredential }> {
+}): Promise<{ credential: WebAuthnCredential }> {
   const expectedChallenge = takeChallenge(regChallengeKey(params.userId));
   if (!expectedChallenge) {
     throw new Error("no pending registration challenge");
@@ -132,7 +133,7 @@ export async function verifyKnockRegistration(params: {
   }
 
   const info = verification.registrationInfo;
-  const credential: KnockCredential = {
+  const credential: WebAuthnCredential = {
     id: info.credential.id,
     publicKey: bytesToB64url(info.credential.publicKey),
     counter: info.credential.counter,

@@ -51,6 +51,22 @@ export const ServicesFileSchema = z.object({
 });
 export type ServicesFile = z.infer<typeof ServicesFileSchema>;
 
+// ── shared WebAuthn credential ─────────────────────────────────────────
+// Same shape for admin and knock credentials. Used by both UserRecord
+// and AdminRecord — kept in one place so a future spec change (e.g. a
+// new transports value) only needs to be touched once.
+
+export const WebAuthnCredentialSchema = z.object({
+  id: z.string(), // base64url credential id
+  publicKey: z.string(), // base64url
+  counter: z.number().int().nonnegative(),
+  transports: z.array(z.string()).optional(),
+  deviceLabel: z.string().optional(),
+  createdAt: IsoTimestampSchema,
+  lastUsedAt: IsoTimestampSchema.nullable(),
+});
+export type WebAuthnCredential = z.infer<typeof WebAuthnCredentialSchema>;
+
 // ── users.json ─────────────────────────────────────────────────────────
 
 export const UserHistoryEntrySchema = z.object({
@@ -62,17 +78,6 @@ export const UserHistoryEntrySchema = z.object({
 });
 export type UserHistoryEntry = z.infer<typeof UserHistoryEntrySchema>;
 
-export const KnockCredentialSchema = z.object({
-  id: z.string(),
-  publicKey: z.string(), // base64url
-  counter: z.number().int().nonnegative(),
-  transports: z.array(z.string()).optional(),
-  deviceLabel: z.string().optional(),
-  createdAt: IsoTimestampSchema,
-  lastUsedAt: IsoTimestampSchema.nullable(),
-});
-export type KnockCredential = z.infer<typeof KnockCredentialSchema>;
-
 export const UserRecordSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -81,7 +86,7 @@ export const UserRecordSchema = z.object({
   locale: z.string().nullable(),
   createdAt: IsoTimestampSchema,
   history: z.array(UserHistoryEntrySchema),
-  credentials: z.array(KnockCredentialSchema).default([]),
+  credentials: z.array(WebAuthnCredentialSchema).default([]),
   registrationOpenUntil: IsoTimestampSchema.nullable().default(null),
 });
 export type UserRecord = z.infer<typeof UserRecordSchema>;
@@ -134,21 +139,10 @@ export type StatsFile = z.infer<typeof StatsFileSchema>;
 
 // ── admin-credentials.json ─────────────────────────────────────────────
 
-export const AdminCredentialSchema = z.object({
-  id: z.string(), // base64url credential id
-  publicKey: z.string(), // base64url
-  counter: z.number().int().nonnegative(),
-  transports: z.array(z.string()).optional(),
-  deviceLabel: z.string().optional(),
-  createdAt: IsoTimestampSchema,
-  lastUsedAt: IsoTimestampSchema.nullable(),
-});
-export type AdminCredential = z.infer<typeof AdminCredentialSchema>;
-
 export const AdminRecordSchema = z.object({
   id: z.string(),
   name: z.string(),
-  credentials: z.array(AdminCredentialSchema),
+  credentials: z.array(WebAuthnCredentialSchema),
   createdAt: IsoTimestampSchema,
 });
 export type AdminRecord = z.infer<typeof AdminRecordSchema>;

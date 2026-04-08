@@ -384,3 +384,48 @@ h3 {
 .auth-section h2 {
   margin-bottom: 8px;
 }
+
+/* Directory table */
+.directory-wrap {
+  overflow-x: auto;
+}
+.directory-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+.directory-table th,
+.directory-table td {
+  text-align: left;
+  padding: 10px 12px;
+  border-bottom: 1px solid #0f3460;
+}
+.directory-table thead th {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  color: #888;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+.directory-table tbody tr:last-child td {
+  border-bottom: none;
+}
+.directory-table .muted {
+  color: #888;
+}
+.badge-ok {
+  background: #2d6a4f;
+  color: #95d5b2;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+.badge-warn {
+  background: #6b5b2c;
+  color: #ffd166;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}

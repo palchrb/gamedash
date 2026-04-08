@@ -16,7 +16,7 @@ import {
   type UsersFile,
   UsersFileSchema,
   type UserHistoryEntry,
-  type KnockCredential,
+  type WebAuthnCredential,
 } from "../schemas";
 
 const HISTORY_MAX = 20;
@@ -191,7 +191,7 @@ export async function pushHistory(userId: string, entry: UserHistoryEntry): Prom
 
 export async function addKnockCredential(
   userId: string,
-  cred: KnockCredential,
+  cred: WebAuthnCredential,
 ): Promise<void> {
   await mutateUsers((draft) => {
     const user = draft.users.find((u) => u.id === userId);
