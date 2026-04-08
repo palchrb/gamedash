@@ -93,6 +93,17 @@
   "knock.active_session_body": "There is a live game session from the home IP (last seen {seconds}s ago). If you continue, that session will be cut off. Continue anyway?",
   "knock.confirm_continue": "Yes, continue",
   "knock.confirm_cancel": "Cancel",
+  "knock.auth_title": "Sign in",
+  "knock.auth_desc": "This device needs to be approved once before you can play.",
+  "knock.auth_desc_register": "First time on this device. Register a passkey to continue.",
+  "knock.auth_desc_login": "Welcome back. Use your passkey to sign in.",
+  "knock.auth_desc_locked": "This device is not registered yet. Ask a parent to open a registration window for you.",
+  "knock.auth_register": "Register this device",
+  "knock.auth_login": "Sign in with passkey",
+  "knock.auth_locked": "Ask your parent to open a registration window for this device.",
+  "knock.auth_registered": "Device registered. You're signed in.",
+  "knock.auth_signed_in": "Signed in.",
+  "knock.webauthn_unsupported": "This browser does not support passkeys.",
 
   "active.connected": "playing {service}",
   "active.idle_allowed": "whitelisted, not connected",
@@ -124,5 +135,14 @@
   "time.s_short": "s",
   "time.just_now": "just now",
   "time.minutes_ago": "{n} min ago",
-  "time.hours_ago": "{n}h {m}m ago"
+  "time.hours_ago": "{n}h {m}m ago",
+
+  "auth.bootstrap_title": "Create first admin",
+  "auth.bootstrap_desc": "No admins exist yet. This short window lets you register the first passkey. After that, you'll log in with that passkey.",
+  "auth.create": "Create admin + register passkey",
+  "auth.login_title": "Sign in with passkey",
+  "auth.login": "Sign in",
+  "auth.logout": "Logout",
+  "auth.locked_title": "Bootstrap window closed",
+  "auth.locked_desc": "No admins exist and the bootstrap window has expired. Restart the server to re-open it."
 }

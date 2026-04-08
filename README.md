@@ -1,15 +1,15 @@
-# minecraft-dashboard
+# gamedash
 
 A PWA + API for managing one or more game servers (Minecraft and friends)
 behind a per-child knock-link with smart firewall management.
 
-Originally a single-Minecraft dashboard for my son; now generalized to:
+Originally a single-Minecraft dashboard, now generalized to:
 
 - **Multi-game**: 1+ Minecraft instances, Among Us / Impostor, or any
   container — driven by a single `services.json` config.
 - **Per-child knock links**: every kid gets a personal `/u/<token>` URL
   that they install as a PWA on their phone, tablet or desktop. Tapping
-  the icon opens the firewall for the household IP for 24h. One active IP
+  the icon opens the firewall for the household IP for 24 h. One active IP
   per user — a new IP automatically swaps out the old one.
 - **Smart-revoke safety**: a knock from a different network never silently
   cuts off an active game session. The server queries kernel state
@@ -17,57 +17,101 @@ Originally a single-Minecraft dashboard for my son; now generalized to:
   user-confirmation dialog if someone is still playing.
 - **Anchor-IP guard** in the PWA: if the device's current public IP
   doesn't match the last successful knock, the PWA shows a warning before
-  knocking — protecting against e.g. a parent's phone on 4G accidentally
-  overwriting the home IP.
-- **Live state + playtime stats**: a "Who is playing now" panel and
-  per-user playtime accumulated from real connection time (not just
-  whitelist time).
+  knocking.
+- **Live state + playtime stats**: "Who is playing now" panel and
+  per-user real playtime accumulated from actual connection time.
 - **i18n** via flat JSON locales, controlled by `DEFAULT_LOCALE` env.
-  v1 ships English only — drop a new file in `api/locales/` to add
-  another language without touching code.
+- **Passkey auth** on the admin UI (Phase 1, coming next), with configurable
+  session TTL and glide re-auth.
+
+## Stack
+
+- **Backend:** Node 20 + TypeScript (strict), Express 4, Zod, pino, vitest.
+- **Frontend:** vanilla PWA + admin dashboard (no build step).
+- **Persistence:** JSON files in `/mcdata/` with atomic writes, per-file
+  mutex, and schema validation on load. Tokens + session ids stored only
+  as SHA-256 hashes.
+- **Firewall:** host UFW driven via a privileged `ufw-agent` sidecar
+  (`nsenter -t 1`).
+- **Deploy:** Multi-stage Docker build, multi-arch (amd64/arm64) via
+  GitHub Actions to `ghcr.io`.
 
 ## Quick start
 
 ```bash
 git clone …
-cd minecraft-dashboard
-cp .env.example .env   # if you keep one; otherwise edit compose directly
+cd gamedash
+# edit docker-compose.yml if needed
 docker compose up -d
 ```
 
-Open `http://<host>:3000` for the admin dashboard. Add a user in the
-"Users" panel — you'll get a `/u/<token>` link to send to your kid.
-They open it, tap "Install as app" (Chrome/Edge/Safari), and the icon
-on their home screen / desktop becomes their one-tap "Play" button.
+Open `http://<host>:3000` for the admin dashboard.
 
-## Architecture
+> Admin passkey auth is part of **Phase 1** (in-progress). Until that
+> lands, port 3000 is open — only bind it to a trusted interface
+> (reverse proxy, VPN, LAN) and do not expose it to the internet.
+
+## Repository layout
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  api/                                                    │
-│   ├─ server.js          Express routes + boot           │
-│   ├─ registry.js        Loads services.json             │
-│   ├─ services/          Per-game adapters               │
-│   │   ├─ base.js         Lifecycle interface            │
-│   │   ├─ minecraft.js    RCON + worlds + backups        │
-│   │   └─ generic.js      Lifecycle-only fallback        │
-│   ├─ users.js           CRUD + knock + smart-revoke     │
-│   ├─ firewall.js        Generalized UFW operations     │
-│   ├─ connections.js     ss / conntrack (kernel state)   │
-│   ├─ stats.js           60s playtime collector          │
-│   ├─ i18n.js            t() helper                      │
-│   └─ locales/           Flat JSON dictionaries          │
-│       └─ en.json                                        │
-│                                                          │
-│  api/public/            Admin dashboard (legacy UI)     │
-│  api/public/u/          Personal knock PWA              │
-└─────────────────────────────────────────────────────────┘
+api/
+├── src/
+│   ├── server.ts            bootstrap
+│   ├── app.ts               express wiring
+│   ├── config.ts            typed env (Zod)
+│   ├── logger.ts            pino
+│   ├── schemas.ts           single source of truth for JSON shapes
+│   ├── lib/
+│   │   ├── atomic-file.ts   atomic writes + per-file mutex + Zod load
+│   │   ├── hash.ts          SHA-256 + timingSafeEqual helpers
+│   │   ├── ip.ts            strict public-IPv4 validation
+│   │   ├── exec.ts          typed execFile wrapper with timeouts
+│   │   ├── nsenter.ts       ufw-agent sidecar wrapper
+│   │   ├── rcon-pool.ts     exponential-backoff RCON connection
+│   │   └── i18n.ts          t() + resolveLang()
+│   ├── firewall/
+│   │   ├── ufw.ts           UFW mutations via sidecar
+│   │   └── connections.ts   ss + conntrack queries
+│   ├── repos/               atomic JSON repositories
+│   │   ├── users.ts
+│   │   ├── firewall-rules.ts
+│   │   ├── stats.ts
+│   │   ├── admin.ts         credentials + sessions (Phase 1)
+│   │   └── audit.ts         append-only JSONL
+│   ├── services/
+│   │   ├── types.ts         adapter interface
+│   │   ├── base.ts          docker-exec lifecycle
+│   │   ├── generic.ts       lifecycle only
+│   │   ├── minecraft.ts     RCON + worlds + backups
+│   │   └── registry.ts      loads services.json
+│   ├── knock/
+│   │   └── smart-revoke.ts  core knock flow + sweepExpiredRules
+│   ├── stats/
+│   │   └── collector.ts     60s playtime collector
+│   ├── middleware/
+│   │   ├── async-handler.ts
+│   │   └── error-handler.ts
+│   └── routes/
+│       ├── i18n.ts
+│       ├── services.ts
+│       ├── users.ts
+│       ├── firewall.ts
+│       ├── stats.ts
+│       └── knock-pwa.ts
+├── public/                  admin dashboard (static)
+├── pwa/                     knock PWA (static)
+├── locales/                 i18n dictionaries
+├── package.json
+├── tsconfig.json
+├── vitest.config.ts
+└── Dockerfile               multi-stage Node 20 + TS build
 ```
 
-### services.json
+## services.json
 
-Auto-generated on first boot from legacy `MC_*` env vars. To add another
-service, add a block:
+`services.json` MUST exist at `/mcdata/services.json`. There is no
+auto-seeding — the registry fails loudly if it is missing or invalid.
+See `docker-compose.yml` for a sample bind-mount, and:
 
 ```jsonc
 {
@@ -99,30 +143,7 @@ service, add a block:
 }
 ```
 
-Restart the dashboard container to pick up changes.
-
-## Running games in separate compose files
-
-If you'd rather not bundle every game into the dashboard's compose, create
-a shared docker network on the host once:
-
-```bash
-docker network create mc-shared
-```
-
-Then declare it as `external: true` in **both** the dashboard's compose
-and each game's compose:
-
-```yaml
-networks:
-  mcnet:
-    external: true
-    name: mc-shared
-```
-
-The dashboard resolves each game by its container name (the `container`
-field in `services.json`), so games can live in any compose file on the
-same host as long as they join `mc-shared`.
+Restart the dashboard container after editing.
 
 ## Host requirements
 
@@ -136,64 +157,68 @@ The sidecar runs the *host's* binaries, so the host must have:
   On Debian/Ubuntu: `sudo apt install conntrack`. The dashboard degrades
   gracefully if missing; only UDP-game session detection is lost.
 
-## Multi-language
+## Configuration
 
-Default language is set via the `DEFAULT_LOCALE` env var (default `en`).
-v1 ships only English. To add another language:
+All configuration is via environment variables (validated with Zod at
+start-up). Key variables:
 
-1. Copy `api/locales/en.json` to e.g. `api/locales/nb.json`.
-2. Translate the values.
-3. Set `DEFAULT_LOCALE=nb` in compose and restart.
+| Variable | Default | Purpose |
+|---|---|---|
+| `API_PORT` | `3000` | HTTP listen port |
+| `TRUST_PROXY` | `loopback` | Value passed to Express `trust proxy` |
+| `DATA_DIR` | `/mcdata` | Root for all JSON state files |
+| `DEFAULT_SERVICE_ID` | `mc1` | Which service is "default" |
+| `KNOCK_USER_TTL_HOURS` | `24` | How long a knock keeps a rule alive |
+| `KNOCK_IGNORE_RANGES` | `100.64.0.0/10` | CIDRs to silently ignore |
+| `DEFAULT_LOCALE` | `en` | UI default language |
+| `LOG_LEVEL` | `info` | pino log level |
+| `LOG_PRETTY` | `false` | pretty-print for local dev |
+| `ADMIN_RP_ID` | `localhost` | WebAuthn relying party id (Phase 1) |
+| `ADMIN_ORIGIN` | `http://localhost:3000` | WebAuthn expected origin |
+| `ADMIN_SESSION_TTL_HOURS` | `12` | How long a login lasts |
+| `ADMIN_REAUTH_AFTER_HOURS` | `168` | Glide re-auth deadline |
+| `ADMIN_BOOTSTRAP_WINDOW_MINUTES` | `15` | First-admin registration window |
+| `KNOCK_REQUIRE_PASSKEY` | `false` | Require passkey on per-user PWA (Phase 3) |
 
-Missing keys fall back to `en.json` so a half-translated file is safe.
+## Development
 
-## Per-user knock links
+```bash
+cd api
+npm install
+npm run dev       # tsx watch mode
+npm run typecheck # tsc --noEmit
+npm test          # vitest
+npm run build     # tsc → dist/
+npm start         # node dist/server.js
+```
 
-Add a user from the admin dashboard's "Users" panel. You'll get back a
-URL like `https://your-host/u/<random32bytes>`. Send it to your kid.
-On their device:
+## Running games in separate compose files
 
-1. Open the URL in Chrome / Edge / Brave (Android, desktop) or Safari (iOS).
-2. Tap "Install app" / "Add to Home Screen".
-3. The icon now lives on their home screen / Start menu / Launchpad.
-4. **Tapping the icon = auto-knock for 24h.** That's it. Same URL works
-   for siblings on the same household IP.
+If you'd rather not bundle every game into the dashboard's compose, create
+a shared docker network on the host once:
 
-The PWA also auto-renews while it's open in the foreground (every 10
-minutes), so a kid who keeps it open next to their console gets a fresh
-expiry without doing anything.
+```bash
+docker network create mc-shared
+```
 
-### Anchor-IP guard
+Then declare it as `external: true` in **both** the dashboard's compose
+and each game's compose. The dashboard resolves each game by its
+container name (the `container` field in `services.json`), so games can
+live in any compose file on the same host as long as they join
+`mc-shared`.
 
-The PWA stores the last successful IP locally. Before any new knock, it
-fetches the device's current public IP (via `api.ipify.org` and fallbacks)
-and compares. If they differ, you get a blocking dialog explaining that
-continuing will swap the home IP for the current network. This protects
-against a parent's phone on 4G at work accidentally swapping out the home
-IP — a real risk because the system enforces "one active IP per user".
+## Roadmap
 
-### Smart-revoke
+Work-in-progress rewrite on branch `claude/review-repo-structure-EOccA`:
 
-Even if the client guard is bypassed, the server independently checks
-`ss` / `conntrack` for live game traffic from the existing IP before
-allowing any IP swap. If a session is live, the server returns
-`409 {requireConfirm: "active_session"}` and the PWA shows a confirmation
-dialog. Only an explicit user `?force=true` actually overrides.
-
-## Live sessions and playtime stats
-
-`/api/active-sessions` and `/api/stats` (admin) plus `/u/<token>/stats`
-(per user) expose:
-
-- Who is currently connected to which game (with player names for MC).
-- Per-user real playtime (not whitelist time), accumulated every 60s
-  from `ss` / `conntrack` snapshots.
-- Daily / weekly / total per service.
-
-## Legacy single-MC behavior
-
-All the old `/api/status`, `/api/start`, `/api/whitelist/*`, etc. routes
-still work — they're just thin shims that call the default service
-adapter (`DEFAULT_SERVICE_ID`, defaulting to `mc1`). The original
-admin dashboard still works without any client-side changes; only the
-new "Users", "Active sessions" and "Stats" panels are additive.
+- [x] **Phase 0**: Full TypeScript rewrite with strict typing, Zod
+      validation on all JSON boundaries, atomic writes + per-file mutex,
+      pino structured logging, multi-stage Docker build, vitest suite.
+- [ ] **Phase 1**: Passkey (WebAuthn) auth on the admin UI with
+      configurable session TTL, bootstrap window on first start,
+      reverse-proxy support.
+- [ ] **Phase 2**: RCON connection pool cleanup, `/api/public-ip`
+      endpoint, RCON command whitelist, frontend cleanup.
+- [ ] **Phase 3**: Optional passkey-gated knock PWA (env flag).
+- [ ] **Phase 4**: `/healthz`, `/metrics`, graceful shutdown, audit-log
+      rotation.

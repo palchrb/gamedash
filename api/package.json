@@ -1,19 +1,42 @@
 {
-  "name": "mc-dashboard-api",
-  "version": "3.0.0",
-  "description": "Multi-game server management API + per-user knock PWA",
-  "main": "server.js",
+  "name": "gamedash",
+  "version": "4.0.0",
+  "description": "Multi-game server management PWA + API with passkey auth",
+  "private": true,
+  "main": "dist/server.js",
   "scripts": {
-    "start": "node server.js"
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@simplewebauthn/server": "^11.0.0",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
-    "dotenv": "^16.0.0",
-    "express": "^4.18.0",
-    "express-rate-limit": "^7.1.0",
-    "fs-extra": "^11.0.0",
-    "http-proxy-middleware": "^3.0.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1",
+    "express-rate-limit": "^7.4.1",
+    "fs-extra": "^11.2.0",
     "multer": "^2.0.1",
-    "rcon-client": "^4.2.4"
+    "pino": "^9.5.0",
+    "pino-http": "^10.3.0",
+    "rcon-client": "^4.2.4",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "^1.4.7",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/fs-extra": "^11.0.4",
+    "@types/multer": "^1.4.12",
+    "@types/node": "^22.9.0",
+    "@types/supertest": "^6.0.2",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^2.1.5"
   }
 }
