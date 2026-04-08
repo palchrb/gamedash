@@ -183,6 +183,76 @@ Caddy-in-Docker setup, add a `caddy` service to `docker-compose.yml`,
 put it on the same `mcnet` network as `dashboard`, and point
 `reverse_proxy` at `dashboard:3000` instead of `localhost:3000`.
 
+### Keeping the admin UI off the public internet
+
+The API listens on a single port and serves three distinct URL
+surfaces:
+
+| Prefix        | Who should reach it                                    |
+| ------------- | ------------------------------------------------------ |
+| `/`, `/api/*` | Admin UI + admin API (passkey-gated, but still admin)  |
+| `/u/:token/*` | Per-child knock PWA (self-contained; inlines its i18n) |
+| `/healthz`    | Liveness probe                                         |
+
+Because the knock PWA lives entirely under `/u/*`, it is easy to
+expose only that prefix on the public vhost and keep the admin UI on
+a separate hostname that is only reachable over Tailscale (or any
+other private network).
+
+```caddyfile
+# Public vhost: only the per-child knock PWAs are reachable from the
+# open internet. Everything else returns 404.
+dash.example.com {
+    encode zstd gzip
+
+    @knock path /u/*
+    handle @knock {
+        reverse_proxy localhost:3000
+    }
+
+    handle /healthz {
+        reverse_proxy localhost:3000
+    }
+
+    handle {
+        respond "Not found" 404
+    }
+}
+
+# Admin vhost: only bound to the Tailscale interface, so it is only
+# reachable from machines on your tailnet. Caddy will request a
+# certificate from Tailscale's built-in CA automatically when the
+# hostname ends in .ts.net.
+dash.tailnet-name.ts.net {
+    bind tailscale0
+    reverse_proxy localhost:3000
+}
+```
+
+A few notes on this layout:
+
+- **`ADMIN_RP_ID` / `ADMIN_ORIGIN` must match the admin vhost**, not
+  the public one. Set them to `dash.tailnet-name.ts.net` and
+  `https://dash.tailnet-name.ts.net`. WebAuthn will refuse to
+  register a passkey otherwise.
+- The public vhost never serves a login page, so
+  `dash.example.com/` returns 404 — that's intentional. Anyone
+  scanning for an admin UI on the public hostname finds nothing to
+  attack.
+- The `bind tailscale0` line restricts Caddy's listener to the
+  Tailscale interface. Adjust the interface name to match your host
+  (`tailscale0` on Linux, `utun*` on macOS). An alternative is to
+  skip `bind` entirely and rely on a host firewall or `iptables`
+  rule that only allows the tailnet CIDR to reach port 443.
+- If you want the admin UI to reach the API via the same hostname as
+  the browser, keep `ADMIN_RP_ID` / `ADMIN_ORIGIN` pointed at the
+  admin vhost. The public vhost doesn't serve `/api/*` at all in
+  this layout, so the dashboard simply isn't reachable from it.
+
+If you don't care about public exposure at all and just want the
+whole thing on your tailnet, drop the public vhost and keep only the
+`dash.tailnet-name.ts.net` block.
+
 ## License
 
 See [LICENSE](LICENSE).
