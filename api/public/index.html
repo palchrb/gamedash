@@ -199,6 +199,31 @@
       <ul id="user-list" class="user-list"></ul>
     </section>
 
+    <!-- Directory: aggregated view of admins + knock users -->
+    <section class="card">
+      <h2 data-i18n="card.directory">Directory</h2>
+      <p class="card-desc" data-i18n="directory.desc">
+        Everyone with access to this dashboard or to a personal knock link.
+      </p>
+      <div class="btn-group" style="margin-bottom:12px">
+        <button onclick="loadDirectory()" class="btn btn-sm" data-i18n="common.refresh">Refresh</button>
+      </div>
+      <div class="directory-wrap">
+        <table id="directory-table" class="directory-table">
+          <thead>
+            <tr>
+              <th data-i18n="directory.col_name">Name</th>
+              <th data-i18n="directory.col_role">Role</th>
+              <th data-i18n="directory.col_devices">Devices</th>
+              <th data-i18n="directory.col_last_seen">Last seen</th>
+              <th data-i18n="directory.col_status">Status</th>
+            </tr>
+          </thead>
+          <tbody id="directory-body"></tbody>
+        </table>
+      </div>
+    </section>
+
     <!-- Active sessions -->
     <section class="card">
       <h2 data-i18n="card.active_sessions">Who is playing now</h2>

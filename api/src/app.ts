@@ -27,6 +27,7 @@ import { config } from "./config";
 import { logger } from "./logger";
 import { errorHandler } from "./middleware/error-handler";
 import { adminAuthRouter } from "./routes/admin-auth";
+import { directoryRouter } from "./routes/directory";
 import { firewallRouter } from "./routes/firewall";
 import { i18nRouter } from "./routes/i18n";
 import { knockPwaRouter } from "./routes/knock-pwa";
@@ -95,6 +96,7 @@ export function createApp(): Express {
   app.use("/api", requireAdmin);
   app.use(servicesRouter());
   app.use(usersRouter());
+  app.use(directoryRouter());
   app.use(firewallRouter());
   app.use(statsRouter());
   app.use(publicIpRouter());

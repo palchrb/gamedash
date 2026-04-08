@@ -43,7 +43,7 @@ import {
   findAdminByCredentialId,
   updateAdminCredentialCounter,
 } from "../repos/admin";
-import type { AdminCredential, AdminRecord } from "../schemas";
+import type { AdminRecord, WebAuthnCredential } from "../schemas";
 import { putChallenge, takeChallenge } from "./challenges";
 
 // ── helpers ────────────────────────────────────────────────────────────
@@ -101,7 +101,7 @@ export async function verifyRegistration(params: {
   adminId: string;
   response: unknown;
   deviceLabel?: string;
-}): Promise<{ credential: AdminCredential }> {
+}): Promise<{ credential: WebAuthnCredential }> {
   const expectedChallenge = takeChallenge(`reg:${params.adminId}`);
   if (!expectedChallenge) {
     throw new Error("no pending registration challenge");
@@ -128,7 +128,7 @@ export async function verifyRegistration(params: {
   }
 
   const info = verification.registrationInfo;
-  const credential: AdminCredential = {
+  const credential: WebAuthnCredential = {
     id: info.credential.id,
     publicKey: bytesToB64url(info.credential.publicKey),
     counter: info.credential.counter,

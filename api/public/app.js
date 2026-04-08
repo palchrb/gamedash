@@ -628,6 +628,63 @@ async function copyKnockLink(url) {
 
 function escapeAttr(s) { return escapeHtml(s); }
 
+// --- Directory (aggregated admins + knock users) -------------------------
+function formatRelative(iso) {
+  if (!iso) return t("directory.never");
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return iso;
+  const diffSec = Math.max(0, Math.floor((Date.now() - then) / 1000));
+  if (diffSec < 60) return t("directory.just_now");
+  const diffMin = Math.floor(diffSec / 60);
+  if (diffMin < 60) return `${diffMin} min`;
+  const diffH = Math.floor(diffMin / 60);
+  if (diffH < 24) return `${diffH} h`;
+  const diffD = Math.floor(diffH / 24);
+  if (diffD < 30) return `${diffD} d`;
+  return new Date(iso).toLocaleDateString();
+}
+
+function directoryStatusCell(entry) {
+  if (entry.kind === "admin") {
+    if (!entry.credentials || entry.credentials.length === 0) {
+      return `<span class="badge badge-warn">${t("directory.no_passkey")}</span>`;
+    }
+    return `<span class="badge badge-ok">${t("directory.active")}</span>`;
+  }
+  // knock user
+  if (entry.registrationOpenUntil) {
+    return `<span class="badge badge-warn">${t("directory.enroll_open")}</span>`;
+  }
+  if (!entry.credentials || entry.credentials.length === 0) {
+    return `<span class="muted">${t("directory.token_only")}</span>`;
+  }
+  return `<span class="badge badge-ok">${t("directory.active")}</span>`;
+}
+
+async function loadDirectory() {
+  const data = await api("/api/directory");
+  const body = document.getElementById("directory-body");
+  if (!body) return;
+  if (!data || !data.entries || data.entries.length === 0) {
+    body.innerHTML = `<tr><td colspan="5" class="muted">${t("directory.empty")}</td></tr>`;
+    return;
+  }
+  body.innerHTML = data.entries
+    .map((e) => {
+      const roleLabel =
+        e.role === "admin" ? t("directory.role_admin") : t("directory.role_child");
+      const devices = (e.credentials || []).length;
+      return `<tr>
+        <td><strong>${escapeHtml(e.name)}</strong></td>
+        <td>${escapeHtml(roleLabel)}</td>
+        <td>${devices}</td>
+        <td>${escapeHtml(formatRelative(e.lastSeenAt))}</td>
+        <td>${directoryStatusCell(e)}</td>
+      </tr>`;
+    })
+    .join("");
+}
+
 // --- Active sessions ------------------------------------------------------
 async function loadActiveSessions() {
   const data = await api("/api/active-sessions");
@@ -692,6 +749,7 @@ function bootApp() {
   listBackups();
   loadFirewallRules();
   loadUsers();
+  loadDirectory();
   loadActiveSessions();
   loadStatsLeaderboard();
   startPolling();

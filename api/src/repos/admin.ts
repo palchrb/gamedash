@@ -20,7 +20,7 @@ import {
   type AdminCredentialsFile,
   AdminCredentialsFileSchema,
   type AdminRecord,
-  type AdminCredential,
+  type WebAuthnCredential,
   type AdminSession,
   type AdminSessionsFile,
   AdminSessionsFileSchema,
@@ -58,7 +58,7 @@ export async function findAdminById(id: string): Promise<AdminRecord | null> {
 
 export async function findAdminByCredentialId(
   credentialId: string,
-): Promise<{ admin: AdminRecord; credential: AdminCredential } | null> {
+): Promise<{ admin: AdminRecord; credential: WebAuthnCredential } | null> {
   const data = await loadAdminCredentials();
   for (const admin of data.admins) {
     const credential = admin.credentials.find((c) => c.id === credentialId);
@@ -89,7 +89,7 @@ export async function createAdmin(name: string): Promise<AdminRecord> {
 
 export async function addAdminCredential(
   adminId: string,
-  credential: AdminCredential,
+  credential: WebAuthnCredential,
 ): Promise<void> {
   await mutateAdminCredentials((draft) => {
     const admin = draft.admins.find((a) => a.id === adminId);
