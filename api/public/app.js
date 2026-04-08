@@ -17,6 +17,131 @@ async function loadI18n() {
   }
 }
 
+// ---- Auth overlay (Phase 1) -----------------------------------------------
+const $ = (id) => document.getElementById(id);
+
+function showAuth() { $("auth-overlay").classList.remove("hidden"); $("app").classList.add("hidden"); }
+function hideAuth() { $("auth-overlay").classList.add("hidden"); $("app").classList.remove("hidden"); }
+function authMsg(text, kind = "") { const el = $("auth-msg"); el.textContent = text || ""; el.className = "auth-msg" + (kind ? " " + kind : ""); }
+
+async function checkSessionOrLogin() {
+  try {
+    const r = await fetch("/api/admin/me", { credentials: "same-origin" });
+    if (r.ok) {
+      hideAuth();
+      bootApp();
+      return;
+    }
+  } catch (err) {
+    console.error("session check failed", err);
+  }
+  // Not logged in → inspect bootstrap state.
+  showAuth();
+  let bootstrap = null;
+  try {
+    const r = await fetch("/api/admin/bootstrap");
+    bootstrap = await r.json();
+  } catch (err) {
+    authMsg("Unable to reach server", "error");
+    return;
+  }
+  if (bootstrap && bootstrap.open) {
+    $("auth-bootstrap").classList.remove("hidden");
+    $("auth-login").classList.add("hidden");
+    $("auth-locked").classList.add("hidden");
+    $("auth-bootstrap-remaining").textContent =
+      `Window closes in ~${bootstrap.minutesRemaining} min.`;
+    authMsg("");
+    return;
+  }
+  // Window closed → either there IS an admin (show login) or we can't
+  // tell the difference from the client side, so try login first.
+  $("auth-bootstrap").classList.add("hidden");
+  $("auth-login").classList.remove("hidden");
+  $("auth-locked").classList.add("hidden");
+  authMsg("");
+}
+
+async function authStartBootstrap() {
+  const name = $("auth-bootstrap-name").value.trim();
+  if (!name) { authMsg("Enter a name first", "error"); return; }
+  authMsg("Creating admin…");
+  let adminId;
+  try {
+    const r = await fetch("/api/admin/bootstrap/start", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ name }),
+    });
+    const data = await r.json();
+    if (!r.ok || !data.success) throw new Error(data.error || "failed");
+    adminId = data.adminId;
+  } catch (err) {
+    authMsg("Bootstrap failed: " + err.message, "error");
+    return;
+  }
+  authMsg("Touch your authenticator to register the passkey…");
+  try {
+    const optsRes = await fetch("/api/admin/webauthn/register/options", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ adminId }),
+    });
+    const optsData = await optsRes.json();
+    if (!optsRes.ok || !optsData.success) throw new Error(optsData.error || "no options");
+    const att = await window.webauthnRegister(optsData.options);
+    const verifyRes = await fetch("/api/admin/webauthn/register/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ adminId, response: att, deviceLabel: navigator.userAgent.slice(0, 60) }),
+    });
+    const verifyData = await verifyRes.json();
+    if (!verifyRes.ok || !verifyData.success) throw new Error(verifyData.error || "verify failed");
+    authMsg("Registered! Entering dashboard…");
+    hideAuth();
+    bootApp();
+  } catch (err) {
+    authMsg("Registration failed: " + (err.message || err), "error");
+  }
+}
+
+async function authLogin() {
+  authMsg("Touch your authenticator…");
+  try {
+    const optsRes = await fetch("/api/admin/webauthn/authenticate/options", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+    });
+    const optsData = await optsRes.json();
+    if (!optsRes.ok || !optsData.success) throw new Error(optsData.error || "no options");
+    const assertion = await window.webauthnAuthenticate(optsData.options);
+    const verifyRes = await fetch("/api/admin/webauthn/authenticate/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ response: assertion }),
+    });
+    const verifyData = await verifyRes.json();
+    if (!verifyRes.ok || !verifyData.success) throw new Error(verifyData.error || "login failed");
+    authMsg("Welcome!");
+    hideAuth();
+    bootApp();
+  } catch (err) {
+    authMsg("Login failed: " + (err.message || err), "error");
+  }
+}
+
+async function authLogout() {
+  try {
+    await fetch("/api/admin/logout", { method: "POST", credentials: "same-origin" });
+  } catch { /* ignore */ }
+  window.location.reload();
+}
+
 function t(key, vars) {
   let s = I18N[key] || key;
   if (vars) {
@@ -69,12 +194,15 @@ function toast(msg, type = "success") {
   setTimeout(() => (el.className = "toast"), 3000);
 }
 
-loadI18n();
-loadServices();
-
 async function api(path, opts) {
   try {
-    const res = await fetch(`${API}${path}`, opts);
+    const mergedOpts = Object.assign({ credentials: "same-origin" }, opts || {});
+    const res = await fetch(`${API}${path}`, mergedOpts);
+    if (res.status === 401) {
+      showAuth();
+      checkSessionOrLogin();
+      return null;
+    }
     return await res.json();
   } catch (err) {
     toast(err.message, "error");
@@ -84,38 +212,30 @@ async function api(path, opts) {
 
 // --- Status polling ---
 async function refreshStatus() {
-  const [status, rcon] = await Promise.all([
-    api("/api/status"),
-    api("/api/rcon-status"),
-  ]);
+  if (!CURRENT_SERVICE) return;
+  const status = await api(`/api/services/${CURRENT_SERVICE}/status`);
+  if (!status || !status.success) return;
+  const badge = document.getElementById("status-badge");
+  const isOnline = !!status.running;
+  badge.textContent = isOnline ? "Online" : "Offline";
+  badge.className = `badge ${isOnline ? "badge-online" : "badge-offline"}`;
 
-  if (status) {
-    const badge = document.getElementById("status-badge");
-    const isOnline = status.status === "started";
-    badge.textContent = isOnline ? "Online" : "Offline";
-    badge.className = `badge ${isOnline ? "badge-online" : "badge-offline"}`;
+  document.getElementById("server-status").textContent = isOnline
+    ? "Running"
+    : "Stopped";
+  document.getElementById("player-count").textContent = (status.players || []).length;
 
-    document.getElementById("server-status").textContent = isOnline
-      ? "Running"
-      : "Stopped";
-    document.getElementById("player-count").textContent = status.online;
+  const list = document.getElementById("player-list");
+  list.innerHTML = (status.players || [])
+    .map((p) => `<span class="player-tag">${escapeHtml(p)}</span>`)
+    .join("");
 
-    const list = document.getElementById("player-list");
-    list.innerHTML = status.players
-      .map((p) => `<span class="player-tag">${p}</span>`)
-      .join("");
-
-    // Update current world from status (no extra request needed)
-    if (status.currentWorld) {
-      document.getElementById("current-world").textContent = status.currentWorld;
-    }
+  const details = status.details || {};
+  if (details.currentWorld) {
+    document.getElementById("current-world").textContent = details.currentWorld;
   }
-
-  if (rcon) {
-    document.getElementById("rcon-status").textContent = rcon.connected
-      ? "Connected"
-      : "Disconnected";
-  }
+  document.getElementById("rcon-status").textContent =
+    details.rconConnected ? "Connected" : "Disconnected";
 }
 
 // Slow-poll worlds and backups (every 30s)
@@ -127,50 +247,72 @@ function poll() {
     loadWorlds();
     listBackups();
     loadFirewallRules();
-    loadKnocks();
-    loadAttempts();
   }
 }
 
-let pollTimer = setInterval(poll, 10000);
-refreshStatus();
+let pollTimer = null;
+
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(poll, 10000);
+}
+function stopPolling() {
+  if (pollTimer) {
+    clearInterval(pollTimer);
+    pollTimer = null;
+  }
+}
 
 // Pause polling when tab is hidden, resume when visible
 document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
-    clearInterval(pollTimer);
-    pollTimer = null;
-  } else {
+    stopPolling();
+  } else if (!$("app").classList.contains("hidden")) {
     refreshStatus();
     loadWorlds();
     listBackups();
     loadFirewallRules();
-    loadKnocks();
-    loadAttempts();
-    pollTimer = setInterval(poll, 10000);
+    startPolling();
     pollCount = 0;
   }
 });
 
 // --- Server actions ---
 async function serverAction(action) {
-  const data = await api(`/api/${action}`);
+  if (!CURRENT_SERVICE) return;
+  // Map the old dashboard button names to the new service-keyed routes.
+  const map = {
+    start: { path: "start", method: "POST" },
+    stop: { path: "stop", method: "POST" },
+    restart: { path: "restart", method: "POST" },
+    backup: { path: "backup", method: "POST" },
+  };
+  const route = map[action];
+  if (!route) return;
+  const data = await api(`/api/services/${CURRENT_SERVICE}/${route.path}`, {
+    method: route.method,
+  });
   if (data) toast(data.message || data.error || "OK");
 }
 
-// --- Gamemode ---
+// --- Gamemode (sent via the whitelisted RCON /command route) ---
 async function setGamemode(mode) {
-  const data = await api(`/api/gamemode-all/${mode}`);
-  if (data) toast(data.message || data.error || "OK");
+  if (!CURRENT_SERVICE) return;
+  const data = await api(
+    `/api/services/${CURRENT_SERVICE}/command/${encodeURIComponent("gamemode " + mode + " @a")}`,
+  );
+  if (data) toast(data.response || data.error || "OK");
 }
 
 // --- RCON command ---
 async function sendCommand() {
+  if (!CURRENT_SERVICE) return;
   const input = document.getElementById("rcon-cmd");
   const cmd = input.value.trim();
   if (!cmd) return;
-
-  const data = await api(`/api/command/${encodeURIComponent(cmd)}`);
+  const data = await api(
+    `/api/services/${CURRENT_SERVICE}/command/${encodeURIComponent(cmd)}`,
+  );
   const output = document.getElementById("cmd-output");
   if (data) {
     output.textContent = data.response || data.error || JSON.stringify(data);
@@ -181,10 +323,10 @@ async function sendCommand() {
 
 // --- Whitelist ---
 async function whitelistAction(action) {
+  if (!CURRENT_SERVICE) return;
   const player = document.getElementById("whitelist-player").value.trim();
   if (!player) return toast("Enter a player name", "error");
-
-  const data = await api(`/api/whitelist/${action}`, {
+  const data = await api(`/api/services/${CURRENT_SERVICE}/whitelist/${action}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ player }),
@@ -193,7 +335,8 @@ async function whitelistAction(action) {
 }
 
 async function showWhitelist() {
-  const data = await api("/api/whitelist");
+  if (!CURRENT_SERVICE) return;
+  const data = await api(`/api/services/${CURRENT_SERVICE}/whitelist`);
   const output = document.getElementById("whitelist-output");
   if (data) {
     output.textContent = data.response || "No data";
@@ -203,10 +346,10 @@ async function showWhitelist() {
 
 // --- OP ---
 async function opAction(action) {
+  if (!CURRENT_SERVICE) return;
   const player = document.getElementById("op-player").value.trim();
   if (!player) return toast("Enter a player name", "error");
-
-  const data = await api(`/api/${action}`, {
+  const data = await api(`/api/services/${CURRENT_SERVICE}/${action}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ player }),
@@ -216,8 +359,9 @@ async function opAction(action) {
 
 // --- Worlds ---
 async function loadWorlds() {
-  const data = await api("/api/list-worlds");
-  if (!data) return;
+  if (!CURRENT_SERVICE) return;
+  const data = await api(`/api/services/${CURRENT_SERVICE}/worlds`);
+  if (!data || !data.success) return;
 
   document.getElementById("current-world").textContent = data.currentWorld || "unknown";
 
@@ -227,10 +371,10 @@ async function loadWorlds() {
       .map(
         (w) =>
           `<li class="world-item ${w === data.currentWorld ? "world-active" : ""}">
-            <span>${w}${w === data.currentWorld ? " (active)" : ""}</span>
+            <span>${escapeHtml(w)}${w === data.currentWorld ? " (active)" : ""}</span>
             ${
               w !== data.currentWorld
-                ? `<button onclick="switchWorld('${w}')" class="btn btn-sm btn-green">Load</button>`
+                ? `<button onclick="switchWorld('${escapeAttr(w)}')" class="btn btn-sm btn-green">Load</button>`
                 : ""
             }
           </li>`
@@ -242,7 +386,10 @@ async function loadWorlds() {
 }
 
 async function saveCurrentWorld() {
-  const data = await api("/api/save-current");
+  if (!CURRENT_SERVICE) return;
+  const data = await api(`/api/services/${CURRENT_SERVICE}/worlds/save-current`, {
+    method: "POST",
+  });
   if (data) {
     toast(data.message || data.error || "OK");
     loadWorlds();
@@ -250,43 +397,40 @@ async function saveCurrentWorld() {
 }
 
 async function switchWorld(name) {
+  if (!CURRENT_SERVICE) return;
   if (!confirm(`Switch to world "${name}"? Server will restart.`)) return;
-  const data = await api(`/api/change-world/${encodeURIComponent(name)}`);
+  const data = await api(
+    `/api/services/${CURRENT_SERVICE}/worlds/${encodeURIComponent(name)}/switch`,
+    { method: "POST" },
+  );
   if (data) toast(data.message || data.error || "OK");
 }
 
 async function createNewWorld() {
+  if (!CURRENT_SERVICE) return;
   const input = document.getElementById("new-world-name");
   const name = input.value.trim();
   if (!name) return toast("Enter a world name", "error");
   if (!confirm(`Generate new world "${name}"? Server will restart.`)) return;
-
-  const data = await api(`/api/new-world/${encodeURIComponent(name)}`);
+  const data = await api(
+    `/api/services/${CURRENT_SERVICE}/worlds/${encodeURIComponent(name)}/new`,
+    { method: "POST" },
+  );
   if (data) toast(data.message || data.error || "OK");
   input.value = "";
 }
 
+// World upload is deferred until the per-service adapter accepts the
+// stream into its own worlds directory. Left as a no-op so the existing
+// button doesn't look broken.
 async function uploadWorld() {
-  const fileInput = document.getElementById("world-file");
-  if (!fileInput.files.length) return toast("Select a .zip file first", "error");
-
-  const formData = new FormData();
-  formData.append("worldFile", fileInput.files[0]);
-
-  toast("Uploading world...");
-  const data = await api("/api/upload-world", { method: "POST", body: formData });
-  if (data) {
-    toast(data.message || data.error || "OK", data.success ? "success" : "error");
-    fileInput.value = "";
-    loadWorlds();
-  }
+  toast("World upload is temporarily disabled", "error");
 }
-
-loadWorlds();
 
 // --- Backups ---
 async function listBackups() {
-  const data = await api("/api/list-backups");
+  if (!CURRENT_SERVICE) return;
+  const data = await api(`/api/services/${CURRENT_SERVICE}/backups`);
   const list = document.getElementById("backup-list");
   if (data && data.backups) {
     list.innerHTML = data.backups.length
@@ -294,8 +438,8 @@ async function listBackups() {
           .map(
             (b) =>
               `<li class="backup-item">
-                <span>${b}</span>
-                <button onclick="restoreBackup('${b}')" class="btn btn-sm btn-blue">Restore</button>
+                <span>${escapeHtml(b)}</span>
+                <button onclick="restoreBackup('${escapeAttr(b)}')" class="btn btn-sm btn-blue">Restore</button>
               </li>`
           )
           .join("")
@@ -304,12 +448,14 @@ async function listBackups() {
 }
 
 async function restoreBackup(name) {
+  if (!CURRENT_SERVICE) return;
   if (!confirm(`Restore backup "${name}"? Server will restart.`)) return;
-  const data = await api(`/api/restore-backup/${encodeURIComponent(name)}`);
+  const data = await api(
+    `/api/services/${CURRENT_SERVICE}/backups/${encodeURIComponent(name)}/restore`,
+    { method: "POST" },
+  );
   if (data) toast(data.message || data.error || "OK");
 }
-
-listBackups();
 
 // --- Firewall ---
 async function loadFirewallRules() {
@@ -346,22 +492,12 @@ function escapeHtml(str) {
 }
 
 async function detectPublicIp() {
-  const services = [
-    "https://api.ipify.org?format=json",
-    "https://api64.ipify.org?format=json",
-    "https://jsonip.com",
-  ];
-  for (const url of services) {
-    try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5000);
-      const res = await fetch(url, { signal: controller.signal });
-      clearTimeout(timer);
-      const data = await res.json();
-      if (data.ip) return data.ip;
-    } catch { /* try next */ }
-  }
-  return null;
+  // Ask the server — it already knows req.ip from trust-proxy and falls
+  // back to an upstream lookup if needed. This replaces the direct call
+  // to ipify / jsonip that used to leak the admin's browser to third
+  // parties.
+  const data = await api("/api/public-ip");
+  return data && data.success ? data.ip : null;
 }
 
 async function allowMyIp() {
@@ -412,120 +548,10 @@ async function removeFirewallIp(ip) {
   }
 }
 
-loadFirewallRules();
-
-// --- Pending Knocks ---
-function timeAgo(isoString) {
-  const diff = Date.now() - new Date(isoString).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins} min ago`;
-  const hrs = Math.floor(mins / 60);
-  return `${hrs}h ${mins % 60}m ago`;
-}
-
-async function loadKnocks() {
-  const data = await api("/api/firewall/knocks");
-  const list = document.getElementById("knocks-list");
-  if (!data) {
-    list.innerHTML = "<li>Failed to load knocks</li>";
-  } else if (data.knocks && data.knocks.length) {
-    list.innerHTML = data.knocks
-      .map(
-        (k) =>
-          `<li class="firewall-item">
-            <span>
-              <span class="firewall-ip">${escapeHtml(k.ip)}</span>
-              <span class="firewall-meta">${escapeHtml(k.country)}${k.countryCode ? ` (${escapeHtml(k.countryCode)})` : ""} &middot; ${timeAgo(k.timestamp)}</span>
-            </span>
-            <span>
-              <button onclick="approveKnock('${escapeHtml(k.ip)}')" class="btn btn-sm btn-green">Approve</button>
-              <button onclick="dismissKnock('${escapeHtml(k.ip)}')" class="btn btn-sm btn-red">Dismiss</button>
-            </span>
-          </li>`
-      )
-      .join("");
-  } else {
-    list.innerHTML = "<li>No pending knocks</li>";
-  }
-}
-
-async function approveKnock(ip) {
-  const label = prompt(`Label for ${ip} (optional):`, "");
-  if (label === null) return;
-  const data = await api("/api/firewall/knocks/approve", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ip, label }),
-  });
-  if (data) {
-    toast(data.message || data.error || "OK", data.success ? "success" : "error");
-    loadKnocks();
-    loadFirewallRules();
-  }
-}
-
-async function dismissKnock(ip) {
-  if (!confirm(`Dismiss knock from ${ip}?`)) return;
-  const data = await api("/api/firewall/knocks/dismiss", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ip }),
-  });
-  if (data) {
-    toast(data.message || data.error || "OK", data.success ? "success" : "error");
-    loadKnocks();
-  }
-}
-
-loadKnocks();
-
-// --- Connection Attempts ---
-async function loadAttempts() {
-  const data = await api("/api/firewall/attempts");
-  const list = document.getElementById("attempts-list");
-  if (!data) {
-    list.innerHTML = "<li>Failed to load attempts</li>";
-  } else if (data.error) {
-    list.innerHTML = `<li>Error: ${escapeHtml(data.error)}</li>`;
-  } else if (data.attempts) {
-    list.innerHTML = data.attempts.length
-      ? data.attempts
-          .map(
-            (a) =>
-              `<li class="firewall-item">
-                <span>
-                  <span class="firewall-ip">${escapeHtml(a.ip)}</span>
-                  <span class="firewall-meta">${escapeHtml(a.country)}${a.countryCode ? ` (${escapeHtml(a.countryCode)})` : ""} &middot; ${a.count} attempt${a.count !== 1 ? "s" : ""} &middot; ports ${a.ports.join(", ")}</span>
-                </span>
-                <button onclick="allowAttemptIp('${escapeHtml(a.ip)}')" class="btn btn-sm btn-green">Allow</button>
-              </li>`
-          )
-          .join("")
-      : "<li>No blocked attempts in the last 5 minutes</li>";
-  }
-}
-
-async function allowAttemptIp(ip) {
-  const label = prompt(`Label for ${ip} (optional):`, "");
-  if (label === null) return; // cancelled
-  const data = await api("/api/firewall/add", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ip, label }),
-  });
-  if (data) {
-    toast(data.message || data.error || "OK", data.success ? "success" : "error");
-    loadFirewallRules();
-    loadAttempts();
-  }
-}
-
-loadAttempts();
-
 // --- Logs ---
 async function loadLogs() {
-  const data = await api("/api/logs?lines=100");
+  if (!CURRENT_SERVICE) return;
+  const data = await api(`/api/services/${CURRENT_SERVICE}/logs?lines=100`);
   const output = document.getElementById("log-output");
   if (data && data.logs) {
     output.textContent = data.logs.join("\n");
@@ -658,6 +684,19 @@ async function loadStatsLeaderboard() {
     .join("");
 }
 
-loadUsers();
-loadActiveSessions();
-loadStatsLeaderboard();
+// ---- Dashboard boot (called after successful login) ---------------------
+function bootApp() {
+  loadServices();
+  refreshStatus();
+  loadWorlds();
+  listBackups();
+  loadFirewallRules();
+  loadUsers();
+  loadActiveSessions();
+  loadStatsLeaderboard();
+  startPolling();
+}
+
+// ---- Entry point ---------------------------------------------------------
+loadI18n();
+checkSessionOrLogin();

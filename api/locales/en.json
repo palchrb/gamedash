@@ -124,5 +124,14 @@
   "time.s_short": "s",
   "time.just_now": "just now",
   "time.minutes_ago": "{n} min ago",
-  "time.hours_ago": "{n}h {m}m ago"
+  "time.hours_ago": "{n}h {m}m ago",
+
+  "auth.bootstrap_title": "Create first admin",
+  "auth.bootstrap_desc": "No admins exist yet. This short window lets you register the first passkey. After that, you'll log in with that passkey.",
+  "auth.create": "Create admin + register passkey",
+  "auth.login_title": "Sign in with passkey",
+  "auth.login": "Sign in",
+  "auth.logout": "Logout",
+  "auth.locked_title": "Bootstrap window closed",
+  "auth.locked_desc": "No admins exist and the bootstrap window has expired. Restart the server to re-open it."
 }

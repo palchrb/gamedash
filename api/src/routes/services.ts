@@ -8,6 +8,7 @@
 
 import { Router } from "express";
 import { config } from "../config";
+import { isRconCommandAllowed } from "../lib/rcon-whitelist";
 import { asyncH } from "../middleware/async-handler";
 import { HttpError } from "../middleware/error-handler";
 import { PlayerBodySchema } from "../schemas";
@@ -90,6 +91,9 @@ export function servicesRouter(): Router {
       requireCapability(svc, "rcon");
       const cmd = decodeURIComponent(req.params["cmd"] ?? "");
       if (!cmd) throw new HttpError(400, "empty command");
+      if (!isRconCommandAllowed(cmd)) {
+        throw new HttpError(400, "command not in allowlist");
+      }
       res.json({ success: true, response: await svc.rconSend!(cmd) });
     }),
   );

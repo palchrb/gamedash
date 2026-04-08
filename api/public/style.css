@@ -336,3 +336,51 @@ h3 {
 .user-actions { display: flex; gap: 6px; }
 
 .stats-list { list-style: none; padding: 0; margin: 12px 0 0; }
+
+/* ---- Auth overlay (Phase 1) ---- */
+.hidden { display: none !important; }
+
+.auth-overlay {
+  position: fixed;
+  inset: 0;
+  background: #1a1a2e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 2000;
+}
+.auth-card {
+  width: 100%;
+  max-width: 420px;
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 12px;
+  padding: 28px;
+}
+.auth-title {
+  margin-bottom: 14px;
+}
+.auth-msg {
+  color: #888;
+  font-size: 0.85rem;
+  margin-bottom: 16px;
+  min-height: 1em;
+}
+.auth-msg.error {
+  color: #e57373;
+}
+.auth-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #0f3460;
+}
+.auth-section:first-child,
+.auth-section.first {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+.auth-section h2 {
+  margin-bottom: 8px;
+}

@@ -11,12 +11,52 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <div class="container">
+  <!-- ── Login / bootstrap overlay ─────────────────────────────────── -->
+  <div id="auth-overlay" class="auth-overlay hidden">
+    <div class="auth-card">
+      <h1 class="auth-title" data-i18n="header.title">Game Dashboard</h1>
+      <p id="auth-msg" class="auth-msg"></p>
+
+      <!-- Bootstrap: first admin -->
+      <div id="auth-bootstrap" class="auth-section hidden">
+        <h2 data-i18n="auth.bootstrap_title">Create first admin</h2>
+        <p class="card-desc" data-i18n="auth.bootstrap_desc">
+          No admins exist yet. This 15-minute window lets you register
+          the first passkey. After that, you'll log in with that passkey.
+        </p>
+        <div class="input-group">
+          <input type="text" id="auth-bootstrap-name" placeholder="Your name" />
+          <button class="btn btn-green" onclick="authStartBootstrap()"
+            data-i18n="auth.create">Create admin + register passkey</button>
+        </div>
+        <p id="auth-bootstrap-remaining" class="card-desc"></p>
+      </div>
+
+      <!-- Login -->
+      <div id="auth-login" class="auth-section hidden">
+        <h2 data-i18n="auth.login_title">Sign in with passkey</h2>
+        <button class="btn btn-green" onclick="authLogin()"
+          data-i18n="auth.login">Sign in</button>
+      </div>
+
+      <!-- Locked out -->
+      <div id="auth-locked" class="auth-section hidden">
+        <h2 data-i18n="auth.locked_title">Bootstrap window closed</h2>
+        <p class="card-desc" data-i18n="auth.locked_desc">
+          No admins exist and the bootstrap window has expired. Restart
+          the server to re-open it.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div id="app" class="container hidden">
     <header>
       <h1 data-i18n="header.title">Game Dashboard</h1>
       <div class="header-right">
         <select id="service-select" class="service-select" title="Service"></select>
         <div id="status-badge" class="badge badge-offline" data-i18n="header.offline">Offline</div>
+        <button class="btn btn-sm" onclick="authLogout()" data-i18n="auth.logout">Logout</button>
       </div>
     </header>
 
@@ -107,16 +147,6 @@
         <button onclick="addFirewallIp()" class="btn btn-green">Add</button>
       </div>
       <ul id="firewall-list" class="firewall-list"></ul>
-
-      <h3>Pending Knocks</h3>
-      <p class="card-desc">New IPs that visited the map. Approve to grant access.</p>
-      <button onclick="loadKnocks()" class="btn btn-sm" style="margin-bottom:8px">Refresh</button>
-      <ul id="knocks-list" class="firewall-list"></ul>
-
-      <h3>Recent Connection Attempts</h3>
-      <p class="card-desc">IPs blocked by UFW on MC ports in the last 5 minutes.</p>
-      <button onclick="loadAttempts()" class="btn btn-sm" style="margin-bottom:8px">Refresh</button>
-      <ul id="attempts-list" class="firewall-list"></ul>
     </section>
 
     <!-- World Management -->
@@ -187,6 +217,7 @@
     <div id="toast" class="toast"></div>
   </div>
 
+  <script src="webauthn.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

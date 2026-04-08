@@ -9,6 +9,8 @@
  */
 
 import * as http from "node:http";
+import { initBootstrap } from "./auth/bootstrap";
+import { sweepChallenges } from "./auth/challenges";
 import { config } from "./config";
 import { logger } from "./logger";
 import { createApp } from "./app";
@@ -33,10 +35,12 @@ async function main(): Promise<void> {
   );
 
   await initRegistry();
+  await initBootstrap();
 
   statsCollector().start();
 
-  // Periodic firewall rule expiry sweep (every 10 minutes)
+  // Periodic firewall rule expiry sweep + admin session sweep
+  // + WebAuthn challenge sweep (every 10 minutes).
   const sweepInterval = setInterval(() => {
     sweepExpiredRules().catch((err: Error) =>
       log.warn({ err: err.message }, "sweep failed"),
@@ -44,6 +48,7 @@ async function main(): Promise<void> {
     sweepExpiredSessions().catch((err: Error) =>
       log.warn({ err: err.message }, "admin session sweep failed"),
     );
+    sweepChallenges();
   }, 10 * 60 * 1000);
 
   const app = createApp();
