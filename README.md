@@ -25,9 +25,9 @@ the URL token, and can additionally require a passkey if you set
 ```bash
 git clone https://github.com/palchrb/gamedash.git
 cd gamedash
+cp .env.example .env      # then edit — at minimum set RCON_PASSWORD
 mkdir -p data
 # drop your services.json in place — see "Configuration" below
-# export RCON_PASSWORD=... (or put it in a local .env file)
 docker compose up -d
 ```
 
