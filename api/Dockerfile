@@ -30,7 +30,13 @@ COPY public ./public
 COPY pwa ./pwa
 COPY locales ./locales
 
+RUN addgroup -S app && adduser -S app -G app
+USER app
+
 EXPOSE 3000
+
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD wget -qO- http://localhost:3000/healthz || exit 1
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["node", "dist/server.js"]

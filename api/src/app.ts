@@ -21,6 +21,7 @@ import * as path from "node:path";
 import express, { type Express } from "express";
 import cookieParser from "cookie-parser";
 import cors from "cors";
+import rateLimit from "express-rate-limit";
 import pinoHttp from "pino-http";
 import { requireAdmin } from "./auth/middleware";
 import { config } from "./config";
@@ -56,7 +57,31 @@ export function createApp(): Express {
     }),
   );
 
-  app.use(cors());
+  // ── Security headers ────────────────────────────────────────────────
+  app.use((_req, res, next) => {
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "DENY");
+    res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+    res.setHeader("X-XSS-Protection", "0"); // legacy; CSP is the real defence
+    if (c.ADMIN_ORIGIN.startsWith("https://")) {
+      res.setHeader(
+        "Strict-Transport-Security",
+        "max-age=63072000; includeSubDomains",
+      );
+    }
+    next();
+  });
+
+  // CORS — restrict to same origin. The admin UI and knock PWA are both
+  // served from this same Express process, so cross-origin requests are
+  // only needed if someone curls from elsewhere (which we deny).
+  app.use(
+    cors({
+      origin: c.ADMIN_ORIGIN,
+      credentials: true,
+    }),
+  );
+
   app.use(express.json({ limit: "1mb" }));
   app.use(cookieParser());
 
@@ -93,6 +118,18 @@ export function createApp(): Express {
   app.use(express.static(path.resolve(__dirname, "..", "public")));
 
   // ── Admin-gated API ────────────────────────────────────────────────
+  // Global rate limiter for all admin endpoints. Endpoint-specific
+  // limiters (auth, firewall writes) layer on top of this.
+  app.use(
+    "/api",
+    rateLimit({
+      windowMs: 60_000,
+      max: 120,
+      standardHeaders: true,
+      legacyHeaders: false,
+      message: { success: false, error: "too many requests" },
+    }),
+  );
   app.use("/api", requireAdmin);
   app.use(servicesRouter());
   app.use(usersRouter());
