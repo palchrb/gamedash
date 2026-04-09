@@ -104,6 +104,22 @@ li:last-child { border-bottom: none; }
   margin: 16px auto;
 }
 
+.map-link {
+  display: block;
+  text-align: center;
+  padding: 10px 16px;
+  margin: 8px 0;
+  background: rgba(255,255,255,0.06);
+  border-radius: var(--radius);
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.map-link:active { background: rgba(255,255,255,0.1); }
+.map-icon { font-style: normal; }
+
 .dot {
   display: inline-block;
   width: 9px;

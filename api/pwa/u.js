@@ -64,6 +64,7 @@
   const activeList = $("active-list");
   const statsSummary = $("stats-summary");
   const statsWeek = $("stats-week");
+  const mapLinksEl = $("map-links");
   const revokeBtn = $("revoke");
   const authCard = $("auth-card");
   const authDesc = $("auth-desc");
@@ -232,6 +233,20 @@
         for (const btn of servicesList.querySelectorAll("[data-knock-one]")) {
           btn.onclick = () => knock([btn.dataset.knockOne]);
         }
+      }
+
+      // Map links — show for any service that has a mapUrl
+      const withMap = SERVICES.filter((s) => s.mapUrl);
+      if (withMap.length > 0) {
+        mapLinksEl.innerHTML = withMap
+          .map(
+            (s) =>
+              `<a class="map-link" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">` +
+              `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ` +
+              `${escapeHtml(withMap.length > 1 ? t("btn.view_map_named", { service: s.name }) : t("btn.view_map"))}` +
+              `</a>`,
+          )
+          .join("");
       }
     } catch (err) {
       console.error("refreshState failed:", err);
