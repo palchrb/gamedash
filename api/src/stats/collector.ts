@@ -16,6 +16,7 @@ import type { PortSpec } from "../schemas";
 
 const COLLECTOR_INTERVAL_MS = 60_000;
 const INCREMENT_SECONDS = 60;
+const PRUNE_DAYS = 90;
 
 export class StatsCollector {
   private timer: NodeJS.Timeout | null = null;
@@ -81,6 +82,11 @@ export class StatsCollector {
     const day = todayKey();
     const nowIso = new Date().toISOString();
 
+    // Prune cutoff: ISO date string for PRUNE_DAYS ago.
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - PRUNE_DAYS);
+    const cutoffKey = todayKey(cutoff);
+
     await mutateStats((draft) => {
       for (const [ip, entries] of ipMap.entries()) {
         const live = liveByIp.get(ip) ?? new Set<string>();
@@ -102,6 +108,13 @@ export class StatsCollector {
           } else if (user.currentSessions[e.serviceId]) {
             delete user.currentSessions[e.serviceId];
           }
+        }
+      }
+
+      // Prune perDay entries older than PRUNE_DAYS to prevent unbounded growth.
+      for (const user of Object.values(draft.users)) {
+        for (const dayKey of Object.keys(user.perDay)) {
+          if (dayKey < cutoffKey) delete user.perDay[dayKey];
         }
       }
     });

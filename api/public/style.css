@@ -429,3 +429,26 @@ h3 {
   font-size: 0.78rem;
   font-weight: 600;
 }
+
+/* Service checkboxes */
+.service-checkboxes {
+  margin: 8px 0 4px;
+  font-size: 0.88rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+}
+.checkbox-label {
+  color: #888;
+  font-size: 0.82rem;
+}
+.service-cb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.service-cb input[type="checkbox"] {
+  accent-color: #4ecca3;
+}

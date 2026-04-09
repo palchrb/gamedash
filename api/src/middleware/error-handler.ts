@@ -35,5 +35,5 @@ export const errorHandler: ErrorRequestHandler = (err, req, res, _next) => {
   }
   const error = err instanceof Error ? err : new Error(String(err));
   log.error({ err: error.message, stack: error.stack }, "unhandled error");
-  res.status(500).json({ success: false, error: error.message });
+  res.status(500).json({ success: false, error: "internal server error" });
 };

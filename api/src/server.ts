@@ -66,6 +66,7 @@ async function main(): Promise<void> {
       log.warn({ err: err.message }, "audit rotate failed"),
     );
   }, 10 * 60 * 1000);
+  sweepInterval.unref();
 
   const app = createApp();
   const server = http.createServer(app);

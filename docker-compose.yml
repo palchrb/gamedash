@@ -1,17 +1,17 @@
-# gamedash — minimal reference stack.
+# gamedash — reference stack with three game servers.
 #
-# Three services:
-#   mc          one Minecraft server (itzg/minecraft-server)
+# Services:
+#   mc          Minecraft (Java + Bedrock via GeyserMC)
+#   impostor    Impostor (Among Us private server)
+#   terraria    TShock (Terraria)
 #   dashboard   the gamedash API + admin UI + per-child PWA
 #   ufw-agent   tiny privileged sidecar that the dashboard shells into
 #               via `nsenter -t 1` to drive UFW and read kernel state
 #               (ss / conntrack) from the host
 #
-# Add more game servers by duplicating the `mc` block and registering
-# them in ./data/services.json. See README.md for the services.json
-# schema. If you prefer one compose file per game, swap `mcnet` for an
-# externally-created `mc-shared` network and declare `external: true`
-# in each compose.
+# Register each game in ./data/services.json so gamedash knows about
+# ports, containers, and (optionally) RCON. See README.md for the
+# services.json schema.
 
 services:
   mc:
@@ -33,6 +33,32 @@ services:
       RCON_PASSWORD: "${RCON_PASSWORD:?RCON_PASSWORD must be set}"
     volumes:
       - ./data:/data
+    networks:
+      - mcnet
+
+  impostor:
+    image: aeonlucid/impostor:latest
+    container_name: impostor
+    restart: unless-stopped
+    ports:
+      - "22023:22023/udp"
+    volumes:
+      - ./data/impostor:/app/config
+    networks:
+      - mcnet
+
+  terraria:
+    image: ryshe/terraria:latest
+    container_name: terraria
+    restart: unless-stopped
+    tty: true
+    stdin_open: true
+    ports:
+      - "7777:7777"
+    volumes:
+      - ./data/terraria:/root/.local/share/Terraria
+    environment:
+      WORLD_FILENAME: "world.wld"
     networks:
       - mcnet
 
@@ -71,6 +97,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - mc
+      - impostor
+      - terraria
     networks:
       - mcnet
 

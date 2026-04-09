@@ -24,18 +24,17 @@ import type { z } from "zod";
 // ── Per-path mutex ─────────────────────────────────────────────────────
 
 type Waiter = () => void;
-const chains = new Map<string, Promise<void>>();
+const chains = new Map<string, { promise: Promise<void>; depth: number }>();
 
 function acquire(key: string): Promise<Waiter> {
   let release!: Waiter;
   const next = new Promise<void>((resolve) => {
     release = resolve;
   });
-  const prev = chains.get(key) ?? Promise.resolve();
-  chains.set(
-    key,
-    prev.then(() => next),
-  );
+  const entry = chains.get(key);
+  const prev = entry?.promise ?? Promise.resolve();
+  const depth = (entry?.depth ?? 0) + 1;
+  chains.set(key, { promise: prev.then(() => next), depth });
   return prev.then(() => release);
 }
 
@@ -46,8 +45,11 @@ export async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T>
     return await fn();
   } finally {
     release();
-    // If we're the tail of the chain, drop the entry to avoid unbounded growth.
-    if (chains.get(key) === Promise.resolve()) chains.delete(key);
+    const entry = chains.get(key);
+    if (entry) {
+      entry.depth--;
+      if (entry.depth <= 0) chains.delete(key);
+    }
   }
 }
 

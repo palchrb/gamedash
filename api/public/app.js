@@ -182,9 +182,29 @@ async function loadServices() {
         refreshStatus();
       };
     }
+    renderServiceCheckboxes();
   } catch (err) {
     console.error("services load failed:", err);
   }
+}
+
+function renderServiceCheckboxes() {
+  const wrap = document.getElementById("user-service-checkboxes");
+  if (!wrap || SERVICES.length < 2) { if (wrap) wrap.innerHTML = ""; return; }
+  wrap.innerHTML = `<span class="checkbox-label">${t("users.allowed_services")}:</span> ` +
+    SERVICES.map((s) =>
+      `<label class="service-cb">
+        <input type="checkbox" value="${escapeAttr(s.id)}" checked> ${escapeHtml(s.name)}
+      </label>`
+    ).join(" ");
+}
+
+function getSelectedServices() {
+  const boxes = document.querySelectorAll("#user-service-checkboxes input[type=checkbox]");
+  if (boxes.length === 0) return SERVICES.map((s) => s.id);
+  const ids = [];
+  for (const cb of boxes) { if (cb.checked) ids.push(cb.value); }
+  return ids;
 }
 
 function toast(msg, type = "success") {
@@ -561,6 +581,11 @@ async function loadLogs() {
 }
 
 // --- Users (per-child knock links) ---------------------------------------
+function serviceNameById(id) {
+  const s = SERVICES.find((x) => x.id === id);
+  return s ? s.name : id;
+}
+
 async function loadUsers() {
   const data = await api("/api/users");
   const list = document.getElementById("user-list");
@@ -569,18 +594,20 @@ async function loadUsers() {
     list.innerHTML = `<li class="muted">${t("users.no_users")}</li>`;
     return;
   }
-  const origin = window.location.origin;
   list.innerHTML = data.users
     .map((u) => {
-      const url = `${origin}/u/${u.token}`;
-      const services = (u.allowedServices || []).join(", ") || "—";
+      const svcNames = (u.allowedServices || [])
+        .map(serviceNameById).join(", ") || "—";
+      const creds = u.hasCredentials
+        ? `<span class="badge badge-ok" style="font-size:0.7rem">${(u.credentials || []).length} 🔑</span>`
+        : "";
       return `<li class="user-item">
         <div>
-          <strong>${escapeHtml(u.name)}</strong>
-          <div class="muted">${escapeHtml(services)}</div>
+          <strong>${escapeHtml(u.name)}</strong> ${creds}
+          <div class="muted">${escapeHtml(svcNames)}</div>
         </div>
         <div class="user-actions">
-          <button class="btn btn-sm" onclick="copyKnockLink('${escapeAttr(url)}')">${t("btn.copy_link")}</button>
+          <button class="btn btn-sm" onclick="rotateUserToken('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("btn.new_link")}</button>
           <button class="btn btn-sm btn-red" onclick="deleteUser('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("common.delete")}</button>
         </div>
       </li>`;
@@ -592,8 +619,8 @@ async function addUser() {
   const input = document.getElementById("user-name");
   const name = input.value.trim();
   if (!name) return toast(t("users.placeholder_name"), "error");
-  // Default to all services so admin doesn't need a multi-select on first creation
-  const allowedServices = SERVICES.map((s) => s.id);
+  const allowedServices = getSelectedServices();
+  if (allowedServices.length === 0) return toast(t("users.no_services_selected"), "error");
   const data = await api("/api/users", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -601,10 +628,23 @@ async function addUser() {
   });
   if (data && data.success) {
     input.value = "";
-    toast(t("users.created", { name }), "success");
+    const url = `${window.location.origin}/u/${data.token}`;
+    try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
+    prompt(t("users.copy_link_done"), url);
     loadUsers();
+    loadDirectory();
   } else if (data) {
     toast(data.error || "Failed", "error");
+  }
+}
+
+async function rotateUserToken(id, name) {
+  if (!confirm(t("users.rotate_confirm", { name }))) return;
+  const data = await api(`/api/users/${id}/rotate-token`, { method: "POST" });
+  if (data && data.success) {
+    const url = `${window.location.origin}/u/${data.token}`;
+    try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
+    prompt(t("users.rotate_done", { name }), url);
   }
 }
 
