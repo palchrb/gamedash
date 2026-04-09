@@ -76,6 +76,24 @@ it's missing.
       ],
       "dataDir": "/mcdata",
       "logFile": "/mcdata/logs/latest.log"
+    },
+    {
+      "id": "impostor",
+      "name": "Among Us",
+      "type": "generic",
+      "container": "impostor",
+      "ports": [
+        { "port": "22023", "proto": "udp" }
+      ]
+    },
+    {
+      "id": "terraria",
+      "name": "Terraria",
+      "type": "generic",
+      "container": "terraria",
+      "ports": [
+        { "port": "7777", "proto": "tcp" }
+      ]
     }
   ]
 }
