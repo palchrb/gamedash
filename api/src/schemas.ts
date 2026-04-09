@@ -39,6 +39,7 @@ export const ServiceConfigSchema = z.object({
       passwordEnv: z.string().optional(),
     })
     .optional(),
+  mapUrl: z.string().url().optional(),
   backupsDir: z.string().optional(),
   worldsDir: z.string().optional(),
   activeWorldDir: z.string().optional(),

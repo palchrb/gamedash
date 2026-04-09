@@ -50,6 +50,7 @@ export interface ServiceAdapter {
   readonly type: string;
   readonly container: string;
   readonly ports: PortSpec[];
+  readonly mapUrl?: string;
   readonly capabilities: Set<Capability>;
 
   hasCapability(cap: Capability): boolean;

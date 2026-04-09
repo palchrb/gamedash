@@ -145,7 +145,9 @@ export function knockPwaRouter(): Router {
       const dict = getDictForClient(lang);
       const services = user.allowedServices.map((id) => {
         const a = registry().get(id);
-        return a ? { id, name: a.name } : { id, name: id };
+        return a
+          ? { id, name: a.name, ...(a.mapUrl ? { mapUrl: a.mapUrl } : {}) }
+          : { id, name: id };
       });
       const c = config();
       const initial = {
@@ -170,7 +172,9 @@ export function knockPwaRouter(): Router {
       const rule = await findRuleByUserId(user.id);
       const services = user.allowedServices.map((id) => {
         const a = registry().get(id);
-        return a ? { id, name: a.name } : { id, name: id };
+        return a
+          ? { id, name: a.name, ...(a.mapUrl ? { mapUrl: a.mapUrl } : {}) }
+          : { id, name: id };
       });
 
       const c = config();
