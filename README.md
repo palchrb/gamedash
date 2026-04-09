@@ -74,6 +74,7 @@ it's missing.
         { "port": "25565", "proto": "tcp" },
         { "port": "19132", "proto": "udp" }
       ],
+      "mapUrl": "https://map.example.com",
       "dataDir": "/mcdata",
       "logFile": "/mcdata/logs/latest.log"
     },
@@ -98,6 +99,17 @@ it's missing.
   ]
 }
 ```
+
+Game containers do **not** need to live in the same `docker-compose.yml`
+as the dashboard. Gamedash reaches them via `docker exec <container>`,
+which works against any container on the host regardless of which
+compose stack started it. Just make sure the `container` name in
+`services.json` matches the actual container name.
+
+The optional `mapUrl` field adds a "View world map" link in the child's
+knock PWA. The URL should point to wherever you host your map viewer
+(e.g. BlueMap proxied through Caddy — see the reverse proxy section
+below).
 
 Restart the dashboard container after editing.
 

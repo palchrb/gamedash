@@ -1,67 +1,15 @@
-# gamedash — reference stack with three game servers.
+# gamedash — dashboard + ufw sidecar.
 #
-# Services:
-#   mc          Minecraft (Java + Bedrock via GeyserMC)
-#   impostor    Impostor (Among Us private server)
-#   terraria    TShock (Terraria)
-#   dashboard   the gamedash API + admin UI + per-child PWA
-#   ufw-agent   tiny privileged sidecar that the dashboard shells into
-#               via `nsenter -t 1` to drive UFW and read kernel state
-#               (ss / conntrack) from the host
+# Game servers (Minecraft, Terraria, etc.) are managed separately —
+# they can live in their own compose stacks or be started any other
+# way. Gamedash reaches them via `docker exec <container>`, so all
+# that matters is that the container name in services.json matches a
+# running container on the same Docker host.
 #
-# Register each game in ./data/services.json so gamedash knows about
-# ports, containers, and (optionally) RCON. See README.md for the
-# services.json schema.
+# See README.md for the services.json schema and Caddy reverse-proxy
+# examples.
 
 services:
-  mc:
-    image: itzg/minecraft-server:latest
-    container_name: mc1
-    tty: true
-    stdin_open: true
-    restart: unless-stopped
-    ports:
-      - "25565:25565"
-      - "19132:19132/udp"
-    environment:
-      EULA: "TRUE"
-      TYPE: "PAPER"
-      MEMORY: "4096M"
-      TZ: "Europe/Oslo"
-      ENABLE_RCON: "true"
-      RCON_PORT: "25575"
-      RCON_PASSWORD: "${RCON_PASSWORD:?RCON_PASSWORD must be set}"
-    volumes:
-      - ./data:/data
-    networks:
-      - mcnet
-
-  impostor:
-    image: aeonlucid/impostor:latest
-    container_name: impostor
-    restart: unless-stopped
-    ports:
-      - "22023:22023/udp"
-    volumes:
-      - ./data/impostor:/app/config
-    networks:
-      - mcnet
-
-  terraria:
-    image: ryshe/terraria:latest
-    container_name: terraria
-    restart: unless-stopped
-    tty: true
-    stdin_open: true
-    ports:
-      - "7777:7777"
-    volumes:
-      - ./data/terraria:/root/.local/share/Terraria
-    environment:
-      WORLD_FILENAME: "world.wld"
-    networks:
-      - mcnet
-
   dashboard:
     image: ghcr.io/palchrb/gamedash:latest
     # Or build locally:
@@ -73,7 +21,7 @@ services:
     environment:
       # Referenced by services.json via passwordEnv — the dashboard
       # reads it to dial RCON. Must match the Minecraft RCON password.
-      RCON_PASSWORD: "${RCON_PASSWORD:?RCON_PASSWORD must be set}"
+      RCON_PASSWORD: "${RCON_PASSWORD:-}"
 
       # WebAuthn: these MUST match the address bar the browser uses.
       # For HTTPS behind a reverse proxy, set them to your real host,
@@ -95,12 +43,6 @@ services:
     volumes:
       - ./data:/mcdata
       - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      - mc
-      - impostor
-      - terraria
-    networks:
-      - mcnet
 
   ufw-agent:
     image: alpine:latest
@@ -113,7 +55,3 @@ services:
     # the HOST filesystem, so the alpine image here is only a parking
     # spot. The host must have ufw + iproute2 installed; conntrack is
     # optional and only needed for UDP smart-revoke + UDP playtime.
-
-networks:
-  mcnet:
-    driver: bridge
