@@ -53,7 +53,7 @@ const ConfigSchema = z.object({
   DEFAULT_LOCALE: z.string().default("en"),
 
   // ── UFW sidecar ───────────────────────────────────────────────────────
-  UFW_AGENT_CONTAINER: z.string().default("ufw-agent"),
+  UFW_SIDECAR_URL: z.string().default("http://ufw-sidecar:9090"),
 
   // ── Admin passkey auth (Phase 1) ───────────────────────────────────────
   ADMIN_RP_ID: z.string().default("localhost"),

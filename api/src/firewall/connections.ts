@@ -1,5 +1,5 @@
 /**
- * Kernel connection state queries (ss + conntrack).
+ * Kernel connection state queries via the sidecar HTTP API.
  *
  * This is the authoritative source for "is this IP currently playing?"
  * Used by:
@@ -7,17 +7,14 @@
  *   - stats collector (accumulate per-user playtime)
  *   - /api/active-sessions endpoint
  *
- * We batch: one `ss` call + one `conntrack` call regardless of how many
+ * We batch: one sidecar call for TCP + one for UDP regardless of how many
  * users / services are configured. Missing conntrack (UDP) degrades
  * gracefully — TCP games still work.
  */
 
 import { logger } from "../logger";
-import { nsenterRun } from "../lib/nsenter";
+import { sidecarTcpConnections, sidecarUdpConnections } from "../lib/nsenter";
 import type { PortSpec } from "../schemas";
-
-const SS_TIMEOUT_MS = 5_000;
-const CONNTRACK_TIMEOUT_MS = 5_000;
 
 export interface LiveConnection {
   srcIp: string;
@@ -26,15 +23,8 @@ export interface LiveConnection {
 }
 
 export async function listEstablishedTcp(): Promise<LiveConnection[]> {
-  let stdout: string;
-  try {
-    const res = await nsenterRun(["ss", "-tnH", "state", "established"], SS_TIMEOUT_MS);
-    stdout = res.stdout;
-  } catch (err) {
-    const msg = (err as Error).message;
-    if (/no such file|not found/iu.test(msg)) return [];
-    throw err;
-  }
+  const stdout = await sidecarTcpConnections();
+  if (!stdout) return [];
   const out: LiveConnection[] = [];
   for (const line of stdout.split("\n")) {
     const parts = line.trim().split(/\s+/u);
@@ -51,14 +41,8 @@ export async function listEstablishedTcp(): Promise<LiveConnection[]> {
 }
 
 export async function listUdpFlows(): Promise<LiveConnection[]> {
-  let stdout: string;
-  try {
-    const res = await nsenterRun(["conntrack", "-L", "-p", "udp"], CONNTRACK_TIMEOUT_MS);
-    stdout = res.stdout;
-  } catch {
-    // conntrack-tools may not be installed on the host — degrade gracefully
-    return [];
-  }
+  const stdout = await sidecarUdpConnections();
+  if (!stdout) return [];
   const out: LiveConnection[] = [];
   for (const line of stdout.split("\n")) {
     if (!line.startsWith("udp")) continue;

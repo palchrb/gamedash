@@ -1,4 +1,4 @@
-# gamedash — dashboard + ufw sidecar.
+# gamedash — dashboard + UFW sidecar.
 #
 # Game servers (Minecraft, Terraria, etc.) are managed separately —
 # they can live in their own compose stacks or be started any other
@@ -33,6 +33,9 @@ services:
       # set to the proxy's IP(s) or "true" when terminating TLS upstream.
       TRUST_PROXY: "${TRUST_PROXY:-loopback}"
 
+      # UFW sidecar: the dashboard calls this URL for firewall operations.
+      UFW_SIDECAR_URL: "http://ufw-sidecar:9090"
+
       # UI defaults
       DEFAULT_SERVICE_ID: "${DEFAULT_SERVICE_ID:-mc1}"
       DEFAULT_LOCALE: "${DEFAULT_LOCALE:-en}"
@@ -43,15 +46,18 @@ services:
     volumes:
       - ./data:/mcdata
       - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      - ufw-sidecar
 
-  ufw-agent:
-    image: alpine:latest
-    container_name: ufw-agent
-    command: ["sleep", "infinity"]
+  ufw-sidecar:
+    build: ./sidecar
+    container_name: ufw-sidecar
+    restart: unless-stopped
     pid: host
     privileged: true
-    restart: unless-stopped
-    # The agent uses `nsenter -t 1 -m` to run ufw / ss / conntrack from
-    # the HOST filesystem, so the alpine image here is only a parking
-    # spot. The host must have ufw + iproute2 installed; conntrack is
-    # optional and only needed for UDP smart-revoke + UDP playtime.
+    # The sidecar uses nsenter -t 1 to run ufw / ss / conntrack from
+    # the HOST namespaces. The host must have ufw + iproute2 installed;
+    # conntrack is optional (only needed for UDP smart-revoke + playtime).
+    #
+    # Only the dashboard talks to it over the default compose network.
+    # No ports are published to the host.
