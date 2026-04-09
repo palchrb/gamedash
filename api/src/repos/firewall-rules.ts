@@ -26,13 +26,14 @@ export async function saveRules(data: FirewallRulesFile): Promise<void> {
 }
 
 /** Run a transactional mutation: load → mutate → save under a per-file lock. */
-export async function mutateRules(
-  fn: (draft: FirewallRulesFile) => Promise<void> | void,
-): Promise<void> {
-  await withLock(`fw:${filePath()}`, async () => {
+export async function mutateRules<T = void>(
+  fn: (draft: FirewallRulesFile) => Promise<T> | T,
+): Promise<T> {
+  return withLock(`fw:${filePath()}`, async () => {
     const draft = await loadRules();
-    await fn(draft);
+    const result = await fn(draft);
     await saveRules(draft);
+    return result;
   });
 }
 
