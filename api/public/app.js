@@ -607,6 +607,7 @@ async function loadUsers() {
           <div class="muted">${escapeHtml(svcNames)}</div>
         </div>
         <div class="user-actions">
+          <button class="btn btn-sm" onclick="rotateUserToken('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("btn.new_link")}</button>
           <button class="btn btn-sm btn-red" onclick="deleteUser('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("common.delete")}</button>
         </div>
       </li>`;
@@ -634,6 +635,16 @@ async function addUser() {
     loadDirectory();
   } else if (data) {
     toast(data.error || "Failed", "error");
+  }
+}
+
+async function rotateUserToken(id, name) {
+  if (!confirm(t("users.rotate_confirm", { name }))) return;
+  const data = await api(`/api/users/${id}/rotate-token`, { method: "POST" });
+  if (data && data.success) {
+    const url = `${window.location.origin}/u/${data.token}`;
+    try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
+    prompt(t("users.rotate_done", { name }), url);
   }
 }
 
