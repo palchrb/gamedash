@@ -19,7 +19,7 @@ import {
   mutateRules,
 } from "../repos/firewall-rules";
 import { pushHistory } from "../repos/users";
-import { isValidPublicIPv4 } from "../lib/ip";
+import { isValidPublicIP } from "../lib/ip";
 import type { Registry } from "../services/registry";
 import type { FirewallRule, UserRecord } from "../schemas";
 
@@ -57,8 +57,8 @@ export async function knockUser(
   registry: Registry,
   options: KnockOptions = {},
 ): Promise<KnockResult> {
-  if (!isValidPublicIPv4(ip)) {
-    throw new Error("Invalid or non-public IPv4 address");
+  if (!isValidPublicIP(ip)) {
+    throw new Error("Invalid or non-public IP address");
   }
   const serviceIds = resolveServices(user, requestedServices);
   if (serviceIds.length === 0) {

@@ -9,7 +9,7 @@ import rateLimit from "express-rate-limit";
 import { audit } from "../repos/audit";
 import { asyncH } from "../middleware/async-handler";
 import { HttpError } from "../middleware/error-handler";
-import { clientIp, isValidPublicIPv4 } from "../lib/ip";
+import { clientIp, isValidPublicIP } from "../lib/ip";
 import { FirewallAddBodySchema, FirewallRemoveBodySchema } from "../schemas";
 import {
   deleteRuleByIp,
@@ -44,7 +44,7 @@ export function firewallRouter(): Router {
 
   router.get("/api/firewall/my-ip", (req, res) => {
     const ip = clientIp(req);
-    res.json({ success: true, ip, valid: isValidPublicIPv4(ip) });
+    res.json({ success: true, ip, valid: isValidPublicIP(ip) });
   });
 
   router.post(
@@ -52,7 +52,7 @@ export function firewallRouter(): Router {
     firewallLimiter,
     asyncH(async (req, res) => {
       const body = FirewallAddBodySchema.parse(req.body);
-      if (!isValidPublicIPv4(body.ip)) {
+      if (!isValidPublicIP(body.ip)) {
         throw new HttpError(400, "invalid or non-public IPv4 address");
       }
       if (await findRuleByIp(body.ip)) {
@@ -77,7 +77,7 @@ export function firewallRouter(): Router {
     firewallLimiter,
     asyncH(async (req, res) => {
       const body = FirewallRemoveBodySchema.parse(req.body);
-      if (!isValidPublicIPv4(body.ip)) {
+      if (!isValidPublicIP(body.ip)) {
         throw new HttpError(400, "invalid or non-public IPv4 address");
       }
       const rule = await findRuleByIp(body.ip);
