@@ -96,9 +96,9 @@
       $("dialog-body").textContent = body;
       $("dialog-cancel").textContent = t("knock.confirm_cancel");
       $("dialog-confirm").textContent = t("knock.confirm_continue");
-      dialog.hidden = false;
+      dialog.classList.add("open");
       const cleanup = (val) => {
-        dialog.hidden = true;
+        dialog.classList.remove("open");
         $("dialog-cancel").removeEventListener("click", onCancel);
         $("dialog-confirm").removeEventListener("click", onConfirm);
         dialog.removeEventListener("click", onBackdrop);
