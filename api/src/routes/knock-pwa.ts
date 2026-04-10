@@ -27,7 +27,7 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { asyncH } from "../middleware/async-handler";
 import { HttpError } from "../middleware/error-handler";
-import { clientIp, isInIgnoredRange } from "../lib/ip";
+import { clientIp, isInIgnoredRange, isValidPublicIP } from "../lib/ip";
 import { getDictForClient, resolveLang } from "../lib/i18n";
 import { knockUser, revokeUser } from "../knock/smart-revoke";
 import { findByToken, listUsers } from "../repos/users";
@@ -288,6 +288,18 @@ export function knockPwaRouter(): Router {
     asyncH(async (req, res) => {
       const user = await userFromToken(req.params["token"]);
       res.json({ success: true, stats: await summarizeUser(user.id) });
+    }),
+  );
+
+  // Return the client's public IP — used by the anchor-IP guard in the
+  // PWA so it doesn't need to call external services (which get blocked
+  // by tracking protection / CORS).
+  router.get(
+    "/u/:token/my-ip",
+    asyncH(async (req, res) => {
+      await userFromToken(req.params["token"]);
+      const ip = clientIp(req);
+      res.json({ success: true, ip: isValidPublicIP(ip) ? ip : null });
     }),
   );
 

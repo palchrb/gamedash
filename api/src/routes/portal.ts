@@ -32,7 +32,7 @@ import { z } from "zod";
 import type { Request, Response, NextFunction } from "express";
 import { asyncH } from "../middleware/async-handler";
 import { HttpError } from "../middleware/error-handler";
-import { clientIp, isInIgnoredRange } from "../lib/ip";
+import { clientIp, isInIgnoredRange, isValidPublicIP } from "../lib/ip";
 import { getDictForClient, resolveLang } from "../lib/i18n";
 import { knockUser, revokeUser } from "../knock/smart-revoke";
 import { findById, listUsers } from "../repos/users";
@@ -325,6 +325,15 @@ export function portalRouter(): Router {
     asyncH(async (req, res) => {
       const user = getPortalUser(req);
       res.json({ success: true, stats: await summarizeUser(user.id) });
+    }),
+  );
+
+  router.get(
+    "/my/my-ip",
+    requirePortalSession,
+    asyncH(async (req, res) => {
+      const ip = clientIp(req);
+      res.json({ success: true, ip: isValidPublicIP(ip) ? ip : null });
     }),
   );
 
