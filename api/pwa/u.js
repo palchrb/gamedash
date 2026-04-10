@@ -177,6 +177,17 @@
       return { error: data.error };
     }
 
+    if (data.ignored) {
+      // IP is in an ignored range (CGNAT/Tailscale) — no firewall rule
+      // needed. Show success without storing anchor-IP (it would be
+      // meaningless and break the guard on the next visit).
+      showToast(t("knock.success"), "success");
+      refreshState();
+      refreshActive();
+      refreshStats();
+      return data;
+    }
+
     saveState({ lastKnockedIp: data.ip, lastKnockAt: new Date().toISOString() });
     showToast(t("knock.success"), "success");
     refreshState();
