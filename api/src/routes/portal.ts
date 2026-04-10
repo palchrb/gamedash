@@ -1,12 +1,12 @@
 /**
  * Kids portal routes.
  *
- * When KNOCK_REQUIRE_PASSKEY=true, the root URL (`/`) serves a kids
- * portal where children sign in with their passkey (discoverable
- * credentials) and land on `/my` — a cookie-authenticated version of
- * the knock PWA that doesn't need a token URL.
- *
- * When KNOCK_REQUIRE_PASSKEY=false, `GET /` redirects to `/admin`.
+ * The root URL (`/`) always shows the branded landing page.
+ * When KNOCK_REQUIRE_PASSKEY=true, children can sign in with their
+ * passkey (discoverable credentials) and land on `/my` — a
+ * cookie-authenticated version of the knock PWA that doesn't need
+ * a token URL. When passkey is disabled, the landing page is purely
+ * decorative (admins navigate to `/admin` themselves).
  *
  * Existing `/u/:token` URLs keep working unchanged.
  *
@@ -124,27 +124,26 @@ export function portalRouter(): Router {
   router.get(
     "/",
     asyncH(async (req, res) => {
-      if (!config().KNOCK_REQUIRE_PASSKEY) {
-        res.redirect("/admin");
-        return;
-      }
-      // If already logged in, redirect to /my
-      const session = await readAndRefreshPortalSession(req, res);
-      if (session) {
-        const user = await findById(session.userId);
-        if (user) {
-          res.redirect("/my");
-          return;
+      // If passkey is enabled and user is already logged in, go to /my
+      if (config().KNOCK_REQUIRE_PASSKEY) {
+        const session = await readAndRefreshPortalSession(req, res);
+        if (session) {
+          const user = await findById(session.userId);
+          if (user) {
+            res.redirect("/my");
+            return;
+          }
         }
       }
-      // Render a simple login page using the PWA template
+      // Always show the branded landing page
       const lang = resolveLang(req);
       const dict = getDictForClient(lang);
+      const c = config();
       const initial = {
         portalMode: true,
         portalLogin: true,
         lang,
-        requirePasskey: true,
+        requirePasskey: c.KNOCK_REQUIRE_PASSKEY,
         hasCredentials: true,
         registrationOpen: false,
       };
