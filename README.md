@@ -54,7 +54,7 @@ Then:
 ### `services.json` (required)
 
 `services.json` lives at `./data/services.json` (bind-mounted to
-`/mcdata/services.json` in the container). The registry fails loudly if
+`/data/services.json` in the container). The registry fails loudly if
 it's missing.
 
 ```jsonc
@@ -72,11 +72,12 @@ it's missing.
       },
       "ports": [
         { "port": "25565", "proto": "tcp" },
-        { "port": "19132", "proto": "udp" }
+        { "port": "19132", "proto": "udp" },
+        { "port": "24454", "proto": "udp" }
       ],
       "mapUrl": "https://map.example.com",
-      "dataDir": "/mcdata",
-      "logFile": "/mcdata/logs/latest.log"
+      "dataDir": "/data",
+      "logFile": "/data/logs/latest.log"
     },
     {
       "id": "impostor",
@@ -122,7 +123,7 @@ with a clear error rather than a silent misconfiguration.
 |---|---|---|
 | `API_PORT` | `3000` | HTTP listen port |
 | `TRUST_PROXY` | `loopback` | Value passed to Express `trust proxy` — set to your proxy IP(s) when terminating TLS upstream |
-| `DATA_DIR` | `/mcdata` | Root for all JSON state files |
+| `DATA_DIR` | `/data` | Root for all JSON state files |
 | `DEFAULT_SERVICE_ID` | `mc1` | Which service is "default" in the UI |
 | `KNOCK_USER_TTL_HOURS` | `24` | How long a knock keeps a rule alive |
 | `KNOCK_IGNORE_RANGES` | `100.64.0.0/10` | CIDRs to silently ignore (e.g. CGNAT) |

@@ -44,7 +44,7 @@ services:
       # Optional: require a passkey on the per-child PWA too.
       KNOCK_REQUIRE_PASSKEY: "${KNOCK_REQUIRE_PASSKEY:-false}"
     volumes:
-      - ./data:/mcdata
+      - ./data:/data
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - ufw-sidecar
