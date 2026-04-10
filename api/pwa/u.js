@@ -75,6 +75,10 @@
   const authLoginBtn = $("auth-login");
   const authLocked = $("auth-locked");
 
+  // Brand title from hostname
+  const brandTitle = $("brand-title");
+  if (brandTitle) brandTitle.textContent = window.location.hostname;
+
   greeting.textContent = USER.name ? `Hi ${USER.name}!` : "Welcome";
   knockBtn.textContent = t("btn.knock_all");
   status.textContent = t("knock.never");
