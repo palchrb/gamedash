@@ -10,6 +10,10 @@
  * whitelist of allowed commands (see `ALLOWED_RCON_COMMANDS`). Arbitrary
  * user-supplied strings are only permitted from routes that are gated
  * behind admin auth.
+ *
+ * When `dataDir` is omitted from services.json, the adapter still loads
+ * with full RCON support (start/stop, whitelist, op, players) but
+ * filesystem features (backup, world-switching, logs) are disabled.
  */
 
 import * as fs from "node:fs";
@@ -26,6 +30,7 @@ const MAX_BACKUPS = 5;
 
 export class MinecraftAdapter extends BaseAdapter {
   private readonly rcon: RconConnection;
+  private readonly hasDataDir: boolean;
   private readonly dataDir: string;
   private readonly logFile: string;
   private readonly backupsDir: string;
@@ -35,12 +40,9 @@ export class MinecraftAdapter extends BaseAdapter {
 
   constructor(config: ServiceConfig) {
     super(config);
-    this.capabilities.add("logs");
     this.capabilities.add("rcon");
     this.capabilities.add("whitelist");
     this.capabilities.add("op");
-    this.capabilities.add("backup");
-    this.capabilities.add("worlds");
     this.capabilities.add("players");
 
     const rconHost = config.rcon?.host ?? config.container;
@@ -57,7 +59,8 @@ export class MinecraftAdapter extends BaseAdapter {
       password,
     });
 
-    this.dataDir = config.dataDir ?? "/data";
+    this.hasDataDir = !!config.dataDir;
+    this.dataDir = config.dataDir ?? "";
     this.logFile = config.logFile
       ? path.isAbsolute(config.logFile)
         ? config.logFile
@@ -69,8 +72,18 @@ export class MinecraftAdapter extends BaseAdapter {
     this.currentWorldFile =
       config.currentWorldFile ?? path.join(this.dataDir, "current-world.txt");
 
-    fsExtra.ensureDirSync(this.backupsDir);
-    fsExtra.ensureDirSync(this.worldsDir);
+    if (this.hasDataDir) {
+      fsExtra.ensureDirSync(this.backupsDir);
+      fsExtra.ensureDirSync(this.worldsDir);
+      this.capabilities.add("logs");
+      this.capabilities.add("backup");
+      this.capabilities.add("worlds");
+    } else {
+      logger().warn(
+        { id: config.id },
+        "no dataDir configured — backup, worlds, and log features disabled (RCON still works)",
+      );
+    }
 
     this.rcon.start();
   }
@@ -120,7 +133,7 @@ export class MinecraftAdapter extends BaseAdapter {
       running = false;
     }
     let currentWorld: string | null = null;
-    if (fs.existsSync(this.currentWorldFile)) {
+    if (this.hasDataDir && fs.existsSync(this.currentWorldFile)) {
       currentWorld = fs.readFileSync(this.currentWorldFile, "utf8").trim() || null;
     }
     return {
@@ -134,7 +147,7 @@ export class MinecraftAdapter extends BaseAdapter {
   }
 
   override async logs(lines = 100): Promise<string[]> {
-    if (fs.existsSync(this.logFile)) {
+    if (this.hasDataDir && fs.existsSync(this.logFile)) {
       const content = fs.readFileSync(this.logFile, "utf8");
       return content.split("\n").filter(Boolean).slice(-lines);
     }
@@ -157,7 +170,14 @@ export class MinecraftAdapter extends BaseAdapter {
     return this.rcon.send(`deop ${player}`);
   }
 
+  private requireDataDir(): void {
+    if (!this.hasDataDir) {
+      throw new Error("dataDir not configured — mount the MC server data and set dataDir in services.json");
+    }
+  }
+
   async backup(): Promise<BackupInfo> {
+    this.requireDataDir();
     if (!fs.existsSync(this.activeWorldDir)) {
       throw new Error("No active world found");
     }
@@ -181,7 +201,7 @@ export class MinecraftAdapter extends BaseAdapter {
   }
 
   listBackups(): string[] {
-    if (!fs.existsSync(this.backupsDir)) return [];
+    if (!this.hasDataDir || !fs.existsSync(this.backupsDir)) return [];
     return fs
       .readdirSync(this.backupsDir)
       .filter((f) => fs.statSync(path.join(this.backupsDir, f)).isDirectory())
@@ -206,6 +226,7 @@ export class MinecraftAdapter extends BaseAdapter {
   }
 
   async restoreBackup(name: string): Promise<{ restoring: string }> {
+    this.requireDataDir();
     const backupPath = path.join(this.backupsDir, name);
     if (!fs.existsSync(backupPath)) {
       throw new Error("Backup folder not found");
@@ -243,19 +264,20 @@ export class MinecraftAdapter extends BaseAdapter {
 
   listWorlds(): WorldsInfo {
     let worlds: string[] = [];
-    if (fs.existsSync(this.worldsDir)) {
+    if (this.hasDataDir && fs.existsSync(this.worldsDir)) {
       worlds = fs
         .readdirSync(this.worldsDir)
         .filter((f) => fs.statSync(path.join(this.worldsDir, f)).isDirectory());
     }
     let currentWorld: string | null = null;
-    if (fs.existsSync(this.currentWorldFile)) {
+    if (this.hasDataDir && fs.existsSync(this.currentWorldFile)) {
       currentWorld = fs.readFileSync(this.currentWorldFile, "utf8").trim() || null;
     }
     return { worlds, currentWorld };
   }
 
   saveCurrentWorld(): string {
+    this.requireDataDir();
     if (!fs.existsSync(this.activeWorldDir)) {
       throw new Error("No active world folder found");
     }
@@ -270,6 +292,7 @@ export class MinecraftAdapter extends BaseAdapter {
   }
 
   async changeWorld(name: string): Promise<{ switching: string }> {
+    this.requireDataDir();
     const newWorldPath = path.join(this.worldsDir, name);
     if (!fs.existsSync(newWorldPath)) {
       throw new Error("World not found");
@@ -314,6 +337,7 @@ export class MinecraftAdapter extends BaseAdapter {
   }
 
   async newWorld(name: string): Promise<{ creating: string }> {
+    this.requireDataDir();
     const oldWorldName = fs.existsSync(this.currentWorldFile)
       ? fs.readFileSync(this.currentWorldFile, "utf8").trim()
       : null;

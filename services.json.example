@@ -16,8 +16,8 @@
         { "port": "24454", "proto": "udp" }
       ],
       "mapUrl": "https://map.example.com",
-      "dataDir": "/data",
-      "logFile": "/data/logs/latest.log"
+      "dataDir": "/mc-data",
+      "logFile": "/mc-data/logs/latest.log"
     },
     {
       "id": "impostor",

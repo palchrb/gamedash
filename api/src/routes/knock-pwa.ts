@@ -226,7 +226,16 @@ export function knockPwaRouter(): Router {
       else requested = "all";
 
       if (isInIgnoredRange(ip, config())) {
-        throw new HttpError(400, "IP in ignored range");
+        // IP is in a range where firewall rules don't make sense
+        // (e.g. CGNAT, Tailscale). Return success without creating a rule.
+        res.json({
+          success: true,
+          ip,
+          ignored: true,
+          expiresAt: null,
+          services: [],
+        });
+        return;
       }
 
       const result = await knockUser(user, ip, requested, registry(), {

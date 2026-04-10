@@ -76,8 +76,8 @@ it's missing.
         { "port": "24454", "proto": "udp" }
       ],
       "mapUrl": "https://map.example.com",
-      "dataDir": "/data",
-      "logFile": "/data/logs/latest.log"
+      "dataDir": "/mc-data",
+      "logFile": "/mc-data/logs/latest.log"
     },
     {
       "id": "impostor",
@@ -106,6 +106,20 @@ as the dashboard. Gamedash reaches them via `docker exec <container>`,
 which works against any container on the host regardless of which
 compose stack started it. Just make sure the `container` name in
 `services.json` matches the actual container name.
+
+For Minecraft services with `type: "minecraft"`, `dataDir` must point
+to the MC server's data directory **as seen inside the gamedash
+container**. Bind-mount it in `docker-compose.yml`:
+
+```yaml
+volumes:
+  - ./data:/data                            # gamedash state
+  - /path/to/mc-server/data:/mc-data        # minecraft data (backup, worlds, logs)
+```
+
+Then set `"dataDir": "/mc-data"` in `services.json`. Without this
+mount the dashboard can still start/stop the container and send RCON
+commands, but backup, world-switching, and log viewing won't work.
 
 The optional `mapUrl` field adds a "View world map" link in the child's
 knock PWA. The URL should point to wherever you host your map viewer
