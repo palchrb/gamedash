@@ -237,32 +237,38 @@
         knockBtn.textContent = t("btn.knock_all");
       }
 
-      // Per-service buttons
+      // Per-service buttons (+ inline map links)
       if (SERVICES.length > 1) {
         servicesCard.hidden = false;
         servicesList.innerHTML = SERVICES.map(
-          (s) => `<li><span>${escapeHtml(s.name)}</span>
-            <button class="btn btn-small" data-knock-one="${escapeAttr(s.id)}">
-              ${t("btn.knock_one", { service: s.name })}
-            </button></li>`,
+          (s) =>
+            `<li><span>${escapeHtml(s.name)}</span><span class="li-actions">` +
+            (s.mapUrl
+              ? `<a class="map-link-inline" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">` +
+                `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ${t("btn.view_map")}</a> `
+              : "") +
+            `<button class="btn btn-small" data-knock-one="${escapeAttr(s.id)}">` +
+            `${t("btn.knock_one", { service: s.name })}</button></span></li>`,
         ).join("");
         for (const btn of servicesList.querySelectorAll("[data-knock-one]")) {
           btn.onclick = () => knock([btn.dataset.knockOne]);
         }
       }
 
-      // Map links — show for any service that has a mapUrl
+      // Single-service map link under the hero button
       const withMap = SERVICES.filter((s) => s.mapUrl);
-      if (withMap.length > 0) {
+      if (withMap.length > 0 && SERVICES.length === 1) {
         mapLinksEl.innerHTML = withMap
           .map(
             (s) =>
               `<a class="map-link" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">` +
               `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ` +
-              `${escapeHtml(withMap.length > 1 ? t("btn.view_map_named", { service: s.name }) : t("btn.view_map"))}` +
+              `${escapeHtml(t("btn.view_map"))}` +
               `</a>`,
           )
           .join("");
+      } else {
+        mapLinksEl.innerHTML = "";
       }
     } catch (err) {
       console.error("refreshState failed:", err);

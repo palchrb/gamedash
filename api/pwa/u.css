@@ -118,6 +118,19 @@ li:last-child { border-bottom: none; }
   transition: background 0.15s;
 }
 .map-link:active { background: rgba(255,255,255,0.1); }
+.map-link-inline {
+  display: inline-block;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.06);
+  border-radius: var(--radius);
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.map-link-inline:active { background: rgba(255,255,255,0.1); }
+.li-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 .map-icon { font-style: normal; }
 
 .dot {
