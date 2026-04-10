@@ -1,7 +1,7 @@
 /**
  * Admin auth endpoints — passkey enroll + sign-in + session introspection.
  *
- * Routes (all under /api/admin):
+ * Routes (all under /admin/api/admin):
  *   GET  /me                              current session (or 401)
  *   GET  /bootstrap                       {open, expiresAt, minutesRemaining}
  *   POST /bootstrap/start                 creates the first admin record
@@ -80,11 +80,11 @@ const AUTH_CHALLENGE_KEY = "auth:current";
 export function adminAuthRouter(): Router {
   const router = Router();
 
-  router.use("/api/admin", authLimiter);
+  router.use("/admin/api/admin", authLimiter);
 
   // ── session introspection ────────────────────────────────────────────
   router.get(
-    "/api/admin/me",
+    "/admin/api/admin/me",
     asyncH(async (req, res) => {
       const session = await readAndRefreshAdminSession(req, res);
       if (!session) {
@@ -105,12 +105,12 @@ export function adminAuthRouter(): Router {
   );
 
   // ── bootstrap window ─────────────────────────────────────────────────
-  router.get("/api/admin/bootstrap", (_req, res) => {
+  router.get("/admin/api/admin/bootstrap", (_req, res) => {
     res.json({ success: true, ...bootstrapStatus() });
   });
 
   router.post(
-    "/api/admin/bootstrap/start",
+    "/admin/api/admin/bootstrap/start",
     asyncH(async (req, res) => {
       if (!isBootstrapOpen()) {
         throw new HttpError(
@@ -133,7 +133,7 @@ export function adminAuthRouter(): Router {
 
   // ── registration ─────────────────────────────────────────────────────
   router.post(
-    "/api/admin/webauthn/register/options",
+    "/admin/api/admin/webauthn/register/options",
     asyncH(async (req, res) => {
       const body = RegisterOptionsBodySchema.parse(req.body);
 
@@ -158,7 +158,7 @@ export function adminAuthRouter(): Router {
   );
 
   router.post(
-    "/api/admin/webauthn/register/verify",
+    "/admin/api/admin/webauthn/register/verify",
     asyncH(async (req, res) => {
       const body = RegisterVerifyBodySchema.parse(req.body);
 
@@ -209,7 +209,7 @@ export function adminAuthRouter(): Router {
 
   // ── authentication ───────────────────────────────────────────────────
   router.post(
-    "/api/admin/webauthn/authenticate/options",
+    "/admin/api/admin/webauthn/authenticate/options",
     asyncH(async (_req, res) => {
       const options = await generateAuthenticationOpts(AUTH_CHALLENGE_KEY);
       res.json({ success: true, options });
@@ -217,7 +217,7 @@ export function adminAuthRouter(): Router {
   );
 
   router.post(
-    "/api/admin/webauthn/authenticate/verify",
+    "/admin/api/admin/webauthn/authenticate/verify",
     asyncH(async (req, res) => {
       const body = AuthenticateVerifyBodySchema.parse(req.body);
       let result;
@@ -243,7 +243,7 @@ export function adminAuthRouter(): Router {
 
   // ── logout ───────────────────────────────────────────────────────────
   router.post(
-    "/api/admin/logout",
+    "/admin/api/admin/logout",
     asyncH(async (req, res) => {
       const session = await readAndRefreshAdminSession(req, res);
       await destroyAdminSession(req, res);

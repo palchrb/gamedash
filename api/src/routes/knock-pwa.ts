@@ -97,11 +97,11 @@ async function requireKnockAuthIfEnabled(
 }
 
 let cachedPwaTemplate: string | null = null;
-function renderUserPwa(params: {
+export function renderUserPwa(params: {
   initial: Record<string, unknown>;
   dict: Record<string, string>;
   lang: string;
-  token: string;
+  base: string;
 }): string {
   if (!cachedPwaTemplate) {
     try {
@@ -110,11 +110,10 @@ function renderUserPwa(params: {
       cachedPwaTemplate = "<!doctype html><h1>PWA template missing</h1>";
     }
   }
-  const base = `/u/${params.token}`;
   const initBlob = `<script>window.__I18N__=${JSON.stringify(params.dict)};window.__INIT__=${JSON.stringify(params.initial)};</script>`;
   return cachedPwaTemplate
     .replace(/\{\{LANG\}\}/gu, params.lang)
-    .replace(/\{\{BASE\}\}/gu, base)
+    .replace(/\{\{BASE\}\}/gu, params.base)
     .replace(/\{\{INIT\}\}/gu, initBlob);
 }
 
@@ -167,7 +166,7 @@ export function knockPwaRouter(): Router {
       };
       res
         .type("html")
-        .send(renderUserPwa({ initial, dict, lang, token: req.params["token"] ?? "" }));
+        .send(renderUserPwa({ initial, dict, lang, base: `/u/${req.params["token"] ?? ""}` }));
     }),
   );
 
