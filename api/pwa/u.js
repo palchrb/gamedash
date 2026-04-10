@@ -99,12 +99,17 @@
       dialog.hidden = false;
       const cleanup = (val) => {
         dialog.hidden = true;
-        $("dialog-cancel").onclick = null;
-        $("dialog-confirm").onclick = null;
+        $("dialog-cancel").removeEventListener("click", onCancel);
+        $("dialog-confirm").removeEventListener("click", onConfirm);
+        dialog.removeEventListener("click", onBackdrop);
         resolve(val);
       };
-      $("dialog-cancel").onclick = () => cleanup(false);
-      $("dialog-confirm").onclick = () => cleanup(true);
+      const onCancel = (e) => { e.stopPropagation(); cleanup(false); };
+      const onConfirm = (e) => { e.stopPropagation(); cleanup(true); };
+      const onBackdrop = (e) => { if (e.target === dialog) cleanup(false); };
+      $("dialog-cancel").addEventListener("click", onCancel);
+      $("dialog-confirm").addEventListener("click", onConfirm);
+      dialog.addEventListener("click", onBackdrop);
     });
   }
 

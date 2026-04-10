@@ -25,17 +25,29 @@ const CMD_TIMEOUT_MS = 15_000;
 
 // ── Validation ──────────────────────────────────────────────────────
 
-const IP_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
+const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
+const IPV6_RE = /^[0-9a-fA-F:]+$/;
 const PORT_RE = /^\d{1,5}$/;
 const PROTO_SET = new Set(["tcp", "udp"]);
 
+function isValidIP(ip) {
+  if (typeof ip !== "string") return false;
+  if (IPV4_RE.test(ip)) {
+    const octets = ip.split(".").map(Number);
+    return octets.every((o) => o <= 255);
+  }
+  // Basic IPv6 structural check — UFW validates further
+  if (IPV6_RE.test(ip) && ip.includes(":") && ip.length >= 2 && ip.length <= 45) {
+    return true;
+  }
+  return false;
+}
+
 function validateUfwBody(body) {
   if (!body || typeof body !== "object") return "invalid body";
-  if (typeof body.ip !== "string" || !IP_RE.test(body.ip)) return "invalid ip";
+  if (!isValidIP(body.ip)) return "invalid ip";
   if (typeof body.port !== "string" || !PORT_RE.test(body.port)) return "invalid port";
   if (!PROTO_SET.has(body.proto)) return "invalid proto";
-  const octets = body.ip.split(".").map(Number);
-  if (octets.some((o) => o > 255)) return "invalid ip octet";
   const portNum = parseInt(body.port, 10);
   if (portNum < 1 || portNum > 65535) return "invalid port range";
   return null;

@@ -21,7 +21,7 @@
 import { Router } from "express";
 import * as http from "node:http";
 import { asyncH } from "../middleware/async-handler";
-import { isValidPublicIPv4 } from "../lib/ip";
+import { isValidPublicIP, isValidPublicIPv4 } from "../lib/ip";
 import { logger } from "../logger";
 
 const UPSTREAM_HOST = "ipv4.icanhazip.com";
@@ -71,7 +71,7 @@ export function publicIpRouter(): Router {
       // if it's routable. That's the most accurate value — no extra
       // round-trip needed.
       const clientIp = (req.ip ?? "").toString();
-      if (isValidPublicIPv4(clientIp)) {
+      if (isValidPublicIP(clientIp)) {
         res.json({ success: true, ip: clientIp, source: "client" });
         return;
       }
