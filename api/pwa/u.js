@@ -314,7 +314,7 @@
   // ---- Active sessions panel -------------------------------------------
   async function refreshActive() {
     try {
-      const res = await fetch("/api/active-sessions");
+      const res = await fetch(`${BASE}/active`);
       const data = await res.json();
       if (!data.success) return;
       if (data.sessions.length === 0) {
