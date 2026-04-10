@@ -25,6 +25,7 @@
  *   GET  /my/sw.js, u.js, u.css, webauthn.js  static PWA assets
  */
 
+import * as fs from "node:fs";
 import * as path from "node:path";
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
@@ -57,6 +58,27 @@ import type { UserRecord } from "../schemas";
 
 const PWA_DIR = path.resolve(__dirname, "..", "..", "pwa");
 const WEBAUTHN_JS = path.resolve(__dirname, "..", "..", "public", "webauthn.js");
+
+let cachedLandingTemplate: string | null = null;
+function renderLanding(params: {
+  initial: Record<string, unknown>;
+  dict: Record<string, string>;
+  lang: string;
+  hostname: string;
+}): string {
+  if (!cachedLandingTemplate) {
+    try {
+      cachedLandingTemplate = fs.readFileSync(path.join(PWA_DIR, "landing.html"), "utf8");
+    } catch {
+      cachedLandingTemplate = "<!doctype html><h1>Landing template missing</h1>";
+    }
+  }
+  const initBlob = `<script>window.__I18N__=${JSON.stringify(params.dict)};window.__INIT__=${JSON.stringify(params.initial)};</script>`;
+  return cachedLandingTemplate
+    .replace(/\{\{LANG\}\}/gu, params.lang)
+    .replace(/\{\{HOSTNAME\}\}/gu, params.hostname)
+    .replace(/\{\{INIT\}\}/gu, initBlob);
+}
 
 const portalAuthLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -141,17 +163,13 @@ export function portalRouter(): Router {
       const lang = resolveLang(req);
       const dict = getDictForClient(lang);
       const c = config();
+      const hostname = new URL(c.ADMIN_ORIGIN).hostname;
       const initial = {
-        portalMode: true,
-        portalLogin: true,
-        lang,
         requirePasskey: c.KNOCK_REQUIRE_PASSKEY,
-        hasCredentials: true,
-        registrationOpen: false,
       };
       res
         .type("html")
-        .send(renderUserPwa({ initial, dict, lang, base: "/my" }));
+        .send(renderLanding({ initial, dict, lang, hostname }));
     }),
   );
 

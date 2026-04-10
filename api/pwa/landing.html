@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="{{LANG}}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#0b0b1a">
+  <link rel="stylesheet" href="/my/u.css">
+  <title>{{HOSTNAME}}</title>
+  <style>
+    html, body { height: 100%; }
+    .landing {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      min-height: 100dvh;
+      padding: 24px;
+      text-align: center;
+      position: relative;
+      z-index: 1;
+    }
+    .landing-logo {
+      font-family: 'Press Start 2P', monospace;
+      font-size: clamp(18px, 5vw, 32px);
+      color: #4ade80;
+      text-shadow: 0 0 20px rgba(74,222,128,0.5), 0 0 60px rgba(74,222,128,0.2), 3px 3px 0 rgba(0,0,0,0.6);
+      margin-bottom: 12px;
+      line-height: 1.4;
+      letter-spacing: 2px;
+    }
+    .landing-sub {
+      font-size: 14px;
+      color: var(--muted);
+      margin-bottom: 48px;
+      opacity: 0.7;
+    }
+    .landing-login {
+      background: var(--bg-2);
+      border-radius: var(--radius);
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 24px 28px;
+      width: 100%;
+      max-width: 320px;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      backdrop-filter: blur(8px);
+    }
+    .landing-login h2 {
+      font-size: 14px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 600;
+      margin: 0 0 16px;
+    }
+    .landing-login .passkey-btn {
+      width: 100%;
+      font-size: 16px;
+      font-weight: 600;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      background: linear-gradient(135deg, #16a34a, #22c55e);
+      color: white;
+      cursor: pointer;
+      box-shadow: 0 4px 16px rgba(34,197,94,0.3);
+      transition: transform 0.1s;
+    }
+    .passkey-btn:active { transform: scale(0.97); }
+    .landing-error {
+      color: var(--danger);
+      font-size: 13px;
+      margin-top: 12px;
+      display: none;
+    }
+    .landing-pixel-art {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 80px;
+      pointer-events: none;
+      z-index: 0;
+      image-rendering: pixelated;
+      opacity: 0.25;
+    }
+    /* Pixel terrain SVG-style with CSS */
+    .landing-pixel-art::before {
+      content: "";
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 80px;
+      background:
+        /* Trees / blocks */
+        linear-gradient(to right,
+          transparent 0%, transparent 5%,
+          #1a5c2a 5%, #1a5c2a 7%,
+          #16502a 7%, #16502a 9%,
+          transparent 9%, transparent 14%,
+          #1a5c2a 14%, #1a5c2a 17%,
+          transparent 17%, transparent 23%,
+          #16502a 23%, #16502a 26%,
+          #1a5c2a 26%, #1a5c2a 30%,
+          transparent 30%, transparent 38%,
+          #1a5c2a 38%, #1a5c2a 41%,
+          transparent 41%, transparent 50%,
+          #16502a 50%, #16502a 53%,
+          #1a5c2a 53%, #1a5c2a 56%,
+          transparent 56%, transparent 64%,
+          #1a5c2a 64%, #1a5c2a 68%,
+          transparent 68%, transparent 75%,
+          #16502a 75%, #16502a 78%,
+          #1a5c2a 78%, #1a5c2a 82%,
+          transparent 82%, transparent 88%,
+          #1a5c2a 88%, #1a5c2a 92%,
+          #16502a 92%, #16502a 95%,
+          transparent 95%
+        ) 0 0 / 100% 10px no-repeat,
+        linear-gradient(#12381a, #0a2010) 0 10px / 100% 70px no-repeat;
+    }
+  </style>
+  {{INIT}}
+</head>
+<body>
+  <div class="landing">
+    <div class="landing-logo" id="logo"></div>
+    <div class="landing-sub" id="subtitle"></div>
+    <div class="landing-login" id="login-card" style="display:none">
+      <h2 id="login-title"></h2>
+      <button class="passkey-btn" id="login-btn" onclick="doLogin()"></button>
+      <div class="landing-error" id="login-error"></div>
+    </div>
+  </div>
+  <div class="landing-pixel-art"></div>
+  <script src="/my/webauthn.js"></script>
+  <script>
+    const I = window.__INIT__ || {};
+    const t = (k, p) => {
+      let s = (window.__I18N__ || {})[k] || k;
+      if (p) Object.entries(p).forEach(([k,v]) => { s = s.replace(`{${k}}`, v); });
+      return s;
+    };
+
+    document.getElementById("logo").textContent = window.location.hostname;
+    document.getElementById("subtitle").textContent = t("landing.subtitle");
+
+    if (I.requirePasskey) {
+      const card = document.getElementById("login-card");
+      card.style.display = "";
+      document.getElementById("login-title").textContent = t("landing.login_title");
+      document.getElementById("login-btn").textContent = t("knock.auth_login");
+    }
+
+    async function doLogin() {
+      const btn = document.getElementById("login-btn");
+      const err = document.getElementById("login-error");
+      err.style.display = "none";
+      btn.disabled = true;
+      btn.textContent = "...";
+      try {
+        const optsRes = await fetch("/portal/webauthn/authenticate/options", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+        });
+        const optsData = await optsRes.json();
+        if (!optsData.success) throw new Error(optsData.error || "failed");
+
+        const assertion = await webauthnAuthenticate(optsData.options);
+
+        const verifyRes = await fetch("/portal/webauthn/authenticate/verify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ response: assertion }),
+        });
+        const verifyData = await verifyRes.json();
+        if (!verifyData.success) throw new Error(verifyData.error || "login failed");
+
+        window.location.href = "/my";
+      } catch (e) {
+        err.textContent = e.message || t("common.error");
+        err.style.display = "";
+        btn.disabled = false;
+        btn.textContent = t("knock.auth_login");
+      }
+    }
+  </script>
+</body>
+</html>

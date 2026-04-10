@@ -170,5 +170,8 @@
   "service.copied": "Copied to clipboard",
 
   "auth.locked_title": "Bootstrap window closed",
-  "auth.locked_desc": "No admins exist and the bootstrap window has expired. Restart the server to re-open it."
+  "auth.locked_desc": "No admins exist and the bootstrap window has expired. Restart the server to re-open it.",
+
+  "landing.subtitle": "Game server portal",
+  "landing.login_title": "Sign in to play"
 }
