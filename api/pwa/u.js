@@ -266,7 +266,10 @@
             `${t("btn.knock_one", { service: s.name })}</button></span></li>`,
         ).join("");
         for (const btn of servicesList.querySelectorAll("[data-knock-one]")) {
-          btn.onclick = () => knock([btn.dataset.knockOne]);
+          btn.onclick = async () => {
+            const result = await knock([btn.dataset.knockOne]);
+            if (result && !result.aborted && !result.error) startKeepAlive();
+          };
         }
       }
 
@@ -397,7 +400,12 @@
   }
 
   // ---- Wire up ----------------------------------------------------------
-  knockBtn.addEventListener("click", () => knock("all"));
+  knockBtn.addEventListener("click", async () => {
+    const result = await knock("all");
+    if (result && !result.aborted && !result.error) {
+      startKeepAlive();
+    }
+  });
   revokeBtn.addEventListener("click", async () => {
     if (!confirm(t("users.revoke_confirm", { name: USER.name }))) return;
     try {
@@ -412,8 +420,10 @@
 
   // ---- Auth (Phase 3 optional passkey gate) ----------------------------
   let keepAliveTimer = null;
+  let keepAliveActive = false;
 
   function startKeepAlive() {
+    keepAliveActive = true;
     if (keepAliveTimer) return;
     keepAliveTimer = setInterval(() => {
       if (!document.hidden) {
@@ -435,17 +445,12 @@
     heroCard.hidden = false;
     knockBtn.disabled = false;
 
-    // Fire knock immediately on first load
-    knock("all").catch(() => {});
-
-    startKeepAlive();
-
     document.addEventListener("visibilitychange", () => {
       if (document.hidden) {
         stopKeepAlive();
       } else {
-        knock("all").catch(() => {});
-        startKeepAlive();
+        // Resume keep-alive only if user has knocked this session
+        if (keepAliveActive) startKeepAlive();
         refreshActive();
         refreshState();
         refreshStats();
