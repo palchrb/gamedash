@@ -4,7 +4,7 @@
       "id": "mc1",
       "name": "Minecraft",
       "type": "minecraft",
-      "container": "mc1",
+      "container": "minecraft-mc-1",
       "rcon": {
         "host": "mc",
         "port": 25575,
@@ -17,8 +17,7 @@
       ],
       "connectAddress": "play.example.com",
       "mapUrl": "https://map.example.com",
-      "dataDir": "/mc-data",
-      "logFile": "/mc-data/logs/latest.log"
+      "dataDir": "/mc-data"
     },
     {
       "id": "impostor",
