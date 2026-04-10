@@ -339,6 +339,45 @@ h3 {
 }
 
 
+/* ---- Tab navigation ---- */
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.tab {
+  flex: 1;
+  padding: 10px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 8px;
+  color: #9aa0c0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border-color 0.2s;
+}
+.tab:hover {
+  background: rgba(255,255,255,0.1);
+}
+.tab.active {
+  background: #16213e;
+  color: #4ecca3;
+  border-color: #4ecca3;
+}
+.tab-content {
+  display: none;
+}
+.tab-content.active {
+  display: block;
+}
+.service-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
 /* ---- Multi-game additions ---- */
 .header-right {
   display: flex;

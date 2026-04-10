@@ -17,6 +17,9 @@
   "header.online": "Online",
   "header.offline": "Offline",
 
+  "tab.services": "Services",
+  "tab.management": "Management",
+
   "card.server_status": "Server Status",
   "card.server_controls": "Server Controls",
   "card.gamemode": "Gamemode (all players)",

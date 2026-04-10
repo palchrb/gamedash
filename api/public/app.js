@@ -161,8 +161,45 @@ function applyI18n() {
   }
 }
 
+// ---- Tab switching --------------------------------------------------------
+let activeTab = "services";
+
+function initTabs() {
+  for (const btn of document.querySelectorAll(".tab")) {
+    btn.addEventListener("click", () => {
+      for (const b of document.querySelectorAll(".tab")) b.classList.remove("active");
+      for (const c of document.querySelectorAll(".tab-content")) c.classList.remove("active");
+      btn.classList.add("active");
+      const tab = btn.dataset.tab;
+      document.getElementById("tab-" + tab).classList.add("active");
+      activeTab = tab;
+      // Refresh management data when switching to that tab
+      if (tab === "management") {
+        loadFirewallRules();
+        loadUsers();
+        loadDirectory();
+        loadActiveSessions();
+        loadStatsLeaderboard();
+      }
+    });
+  }
+}
+
+// ---- Capability gating ----------------------------------------------------
+const CAP_CLASSES = ["rcon", "whitelist", "op", "backup", "worlds", "logs", "players"];
+
+function updateCapabilityVisibility(capabilities) {
+  for (const cap of CAP_CLASSES) {
+    const show = capabilities.includes(cap);
+    for (const el of document.querySelectorAll(".cap-" + cap)) {
+      el.style.display = show ? "" : "none";
+    }
+  }
+}
+
 // ---- Services registry + selector ----------------------------------------
 let SERVICES = [];
+let SERVICE_MAP = {};
 let CURRENT_SERVICE = null;
 
 async function loadServices() {
@@ -170,6 +207,8 @@ async function loadServices() {
     const res = await fetch("/admin/api/services");
     const data = await res.json();
     SERVICES = data.services || [];
+    SERVICE_MAP = {};
+    for (const s of SERVICES) SERVICE_MAP[s.id] = s;
     CURRENT_SERVICE = data.defaultId || (SERVICES[0] && SERVICES[0].id);
     const sel = document.getElementById("service-select");
     if (sel) {
@@ -179,8 +218,13 @@ async function loadServices() {
       sel.value = CURRENT_SERVICE;
       sel.onchange = () => {
         CURRENT_SERVICE = sel.value;
+        updateCapabilityVisibility(SERVICE_MAP[CURRENT_SERVICE]?.capabilities || []);
         refreshStatus();
       };
+    }
+    // Apply capability gating for the initial service
+    if (CURRENT_SERVICE && SERVICE_MAP[CURRENT_SERVICE]) {
+      updateCapabilityVisibility(SERVICE_MAP[CURRENT_SERVICE].capabilities || []);
     }
     renderServiceCheckboxes();
   } catch (err) {
@@ -254,19 +298,30 @@ async function refreshStatus() {
   if (details.currentWorld) {
     document.getElementById("current-world").textContent = details.currentWorld;
   }
-  document.getElementById("rcon-status").textContent =
-    details.rconConnected ? "Connected" : "Disconnected";
+  const caps = SERVICE_MAP[CURRENT_SERVICE]?.capabilities || [];
+  if (caps.includes("rcon")) {
+    document.getElementById("rcon-status").textContent =
+      details.rconConnected ? "Connected" : "Disconnected";
+  }
 }
 
 // Slow-poll worlds and backups (every 30s)
 let pollCount = 0;
 function poll() {
-  refreshStatus();
-  pollCount++;
-  if (pollCount % 3 === 0) {
-    loadWorlds();
-    listBackups();
-    loadFirewallRules();
+  if (activeTab === "services") {
+    refreshStatus();
+    pollCount++;
+    if (pollCount % 3 === 0) {
+      const caps = SERVICE_MAP[CURRENT_SERVICE]?.capabilities || [];
+      if (caps.includes("worlds")) loadWorlds();
+      if (caps.includes("backup")) listBackups();
+    }
+  } else {
+    pollCount++;
+    if (pollCount % 3 === 0) {
+      loadFirewallRules();
+      loadActiveSessions();
+    }
   }
 }
 
@@ -288,10 +343,15 @@ document.addEventListener("visibilitychange", () => {
   if (document.hidden) {
     stopPolling();
   } else if (!$("app").classList.contains("hidden")) {
-    refreshStatus();
-    loadWorlds();
-    listBackups();
-    loadFirewallRules();
+    if (activeTab === "services") {
+      refreshStatus();
+      const caps = SERVICE_MAP[CURRENT_SERVICE]?.capabilities || [];
+      if (caps.includes("worlds")) loadWorlds();
+      if (caps.includes("backup")) listBackups();
+    } else {
+      loadFirewallRules();
+      loadActiveSessions();
+    }
     startPolling();
     pollCount = 0;
   }
@@ -782,16 +842,14 @@ async function loadStatsLeaderboard() {
 }
 
 // ---- Dashboard boot (called after successful login) ---------------------
-function bootApp() {
-  loadServices();
+async function bootApp() {
+  initTabs();
+  await loadServices();
+  // Services tab is active by default — load its data
   refreshStatus();
-  loadWorlds();
-  listBackups();
-  loadFirewallRules();
-  loadUsers();
-  loadDirectory();
-  loadActiveSessions();
-  loadStatsLeaderboard();
+  const caps = SERVICE_MAP[CURRENT_SERVICE]?.capabilities || [];
+  if (caps.includes("worlds")) loadWorlds();
+  if (caps.includes("backup")) listBackups();
   startPolling();
 }
 
