@@ -30,8 +30,7 @@ COPY public ./public
 COPY pwa ./pwa
 COPY locales ./locales
 
-RUN addgroup -S app && adduser -S app -G app
-USER app
+USER node
 
 EXPOSE 3000
 
