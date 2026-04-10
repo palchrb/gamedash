@@ -50,7 +50,9 @@ services:
       - ufw-sidecar
 
   ufw-sidecar:
-    build: ./sidecar
+    image: ghcr.io/palchrb/gamedash/ufw-sidecar:latest
+    # Or build locally:
+    # build: ./sidecar
     container_name: ufw-sidecar
     restart: unless-stopped
     pid: host
