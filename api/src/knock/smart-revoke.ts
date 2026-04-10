@@ -80,33 +80,12 @@ export async function knockUser(
     const now = Date.now();
     const expiresAt = new Date(now + ttlMs).toISOString();
 
-    // ── Same IP: just bump the expiry timestamp ──
-    // UFW rules don't expire — they stay until explicitly deleted by
-    // sweepExpiredRules() or revokeUser(). So a renew only needs to
-    // push out the expiresAt so the sweep doesn't remove the rule
-    // while the user is still active. No UFW calls needed.
+    // ── Same IP: just bump the expiry ──
+    // UFW rules are permanent until explicitly deleted (by sweep or
+    // manual revoke), so all we do here is push out expiresAt.
     if (existing && existing.ip === ip) {
-      const remainMs = existing.expiresAt
-        ? new Date(existing.expiresAt).getTime() - now
-        : 0;
-      if (remainMs > ttlMs / 2) {
-        // More than half the TTL remains — no-op.
-        return {
-          status: "ok" as const,
-          rule: existing,
-          expiresAt: existing.expiresAt!,
-          errors: [],
-        };
-      }
-
-      const renewed: FirewallRule = {
-        ...existing,
-        expiresAt,
-        services: registry.buildRuleServices(serviceIds),
-        label: `${user.name} via ${serviceIds.join(",")}`,
-      };
-      draft.rules[existingIdx] = renewed;
-      return { status: "ok" as const, rule: renewed, expiresAt, errors: [] };
+      draft.rules[existingIdx] = { ...existing, expiresAt };
+      return { status: "ok" as const, rule: draft.rules[existingIdx], expiresAt, errors: [] };
     }
 
     // ── Different IP: smart-revoke check ──
