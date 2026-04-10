@@ -80,8 +80,22 @@ export async function knockUser(
     const now = Date.now();
     const expiresAt = new Date(now + ttlMs).toISOString();
 
-    // ── Same IP: renew ──
+    // ── Same IP: skip if rule is still fresh, otherwise renew ──
     if (existing && existing.ip === ip) {
+      const remainMs = existing.expiresAt
+        ? new Date(existing.expiresAt).getTime() - now
+        : 0;
+      if (remainMs > ttlMs / 2) {
+        // More than half the TTL remains — return existing rule as-is
+        // to avoid unnecessary UFW calls and file writes.
+        return {
+          status: "ok" as const,
+          rule: existing,
+          expiresAt: existing.expiresAt!,
+          errors: [],
+        };
+      }
+
       const renewed: FirewallRule = {
         ...existing,
         expiresAt,
