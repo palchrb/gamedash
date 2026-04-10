@@ -80,14 +80,17 @@ export async function knockUser(
     const now = Date.now();
     const expiresAt = new Date(now + ttlMs).toISOString();
 
-    // ── Same IP: skip if rule is still fresh, otherwise renew ──
+    // ── Same IP: just bump the expiry timestamp ──
+    // UFW rules don't expire — they stay until explicitly deleted by
+    // sweepExpiredRules() or revokeUser(). So a renew only needs to
+    // push out the expiresAt so the sweep doesn't remove the rule
+    // while the user is still active. No UFW calls needed.
     if (existing && existing.ip === ip) {
       const remainMs = existing.expiresAt
         ? new Date(existing.expiresAt).getTime() - now
         : 0;
       if (remainMs > ttlMs / 2) {
-        // More than half the TTL remains — return existing rule as-is
-        // to avoid unnecessary UFW calls and file writes.
+        // More than half the TTL remains — no-op.
         return {
           status: "ok" as const,
           rule: existing,
@@ -103,18 +106,7 @@ export async function knockUser(
         label: `${user.name} via ${serviceIds.join(",")}`,
       };
       draft.rules[existingIdx] = renewed;
-      const errors = await ufwAllowMany(ip, flattenPorts(renewed));
-      await pushHistory(user.id, {
-        ip,
-        at: new Date().toISOString(),
-        services: serviceIds,
-        ua: options.ua ?? null,
-        kind: "renew",
-      });
-      if (!options.skipAudit) {
-        await audit({ kind: "knock.renew", userId: user.id, ip, services: serviceIds });
-      }
-      return { status: "ok" as const, rule: renewed, expiresAt, errors };
+      return { status: "ok" as const, rule: renewed, expiresAt, errors: [] };
     }
 
     // ── Different IP: smart-revoke check ──
