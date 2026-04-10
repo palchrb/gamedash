@@ -49,6 +49,11 @@ services:
       # Mount game server data dirs for backup / world-switching / logs.
       # The paths below must match the dataDir values in services.json.
       # - /path/to/mc-server/data:/mc-data
+    networks:
+      - default
+      # Join the Minecraft server's network so RCON can reach it by
+      # container name. Adjust the network name to match your MC stack.
+      # - mcnet
     depends_on:
       - ufw-sidecar
 
@@ -66,3 +71,10 @@ services:
     #
     # Only the dashboard talks to it over the default compose network.
     # No ports are published to the host.
+
+# External networks — uncomment and adjust the name to match the
+# Docker network your game servers run on (check with `docker network ls`).
+# networks:
+#   mcnet:
+#     external: true
+#     name: minecraft_mcnet

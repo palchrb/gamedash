@@ -118,6 +118,30 @@ li:last-child { border-bottom: none; }
   transition: background 0.15s;
 }
 .map-link:active { background: rgba(255,255,255,0.1); }
+.map-link-inline {
+  display: inline-block;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.06);
+  border-radius: var(--radius);
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.map-link-inline:active { background: rgba(255,255,255,0.1); }
+.li-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.li-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
+.connect-row { font-size: 13px; }
+.connect-addr {
+  font-family: monospace;
+  background: rgba(255,255,255,0.08);
+  padding: 2px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: all;
+}
+.connect-ports { font-size: 12px; }
 .map-icon { font-style: normal; }
 
 .dot {

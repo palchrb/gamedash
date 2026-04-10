@@ -4,7 +4,7 @@
       "id": "mc1",
       "name": "Minecraft",
       "type": "minecraft",
-      "container": "mc1",
+      "container": "minecraft-mc-1",
       "rcon": {
         "host": "mc",
         "port": 25575,
@@ -15,15 +15,16 @@
         { "port": "19132", "proto": "udp" },
         { "port": "24454", "proto": "udp" }
       ],
+      "connectAddress": "play.example.com",
       "mapUrl": "https://map.example.com",
-      "dataDir": "/mc-data",
-      "logFile": "/mc-data/logs/latest.log"
+      "dataDir": "/mc-data"
     },
     {
       "id": "impostor",
       "name": "Among Us",
       "type": "generic",
       "container": "impostor",
+      "connectAddress": "play.example.com:22023",
       "ports": [
         { "port": "22023", "proto": "udp" }
       ]
@@ -33,6 +34,7 @@
       "name": "Terraria",
       "type": "generic",
       "container": "terraria",
+      "connectAddress": "play.example.com:7777",
       "ports": [
         { "port": "7777", "proto": "tcp" }
       ]

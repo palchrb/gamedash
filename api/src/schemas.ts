@@ -40,6 +40,7 @@ export const ServiceConfigSchema = z.object({
     })
     .optional(),
   mapUrl: z.string().url().optional(),
+  connectAddress: z.string().optional(),
   backupsDir: z.string().optional(),
   worldsDir: z.string().optional(),
   activeWorldDir: z.string().optional(),
