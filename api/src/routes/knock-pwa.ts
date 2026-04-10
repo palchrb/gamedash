@@ -146,7 +146,13 @@ export function knockPwaRouter(): Router {
       const services = user.allowedServices.map((id) => {
         const a = registry().get(id);
         return a
-          ? { id, name: a.name, ...(a.mapUrl ? { mapUrl: a.mapUrl } : {}) }
+          ? {
+              id,
+              name: a.name,
+              ports: a.ports,
+              ...(a.mapUrl ? { mapUrl: a.mapUrl } : {}),
+              ...(a.connectAddress ? { connectAddress: a.connectAddress } : {}),
+            }
           : { id, name: id };
       });
       const c = config();
@@ -173,7 +179,13 @@ export function knockPwaRouter(): Router {
       const services = user.allowedServices.map((id) => {
         const a = registry().get(id);
         return a
-          ? { id, name: a.name, ...(a.mapUrl ? { mapUrl: a.mapUrl } : {}) }
+          ? {
+              id,
+              name: a.name,
+              ports: a.ports,
+              ...(a.mapUrl ? { mapUrl: a.mapUrl } : {}),
+              ...(a.connectAddress ? { connectAddress: a.connectAddress } : {}),
+            }
           : { id, name: id };
       });
 

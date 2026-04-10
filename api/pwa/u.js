@@ -237,12 +237,27 @@
         knockBtn.textContent = t("btn.knock_all");
       }
 
-      // Per-service buttons (+ inline map links)
+      // Connection info helper
+      function connectInfo(s) {
+        if (s.connectAddress) {
+          return `<span class="connect-addr" title="${t("service.click_to_copy")}"` +
+            ` data-copy="${escapeAttr(s.connectAddress)}">${escapeHtml(s.connectAddress)}</span>`;
+        }
+        if (s.ports && s.ports.length > 0) {
+          const portStr = s.ports.map((p) => `${p.port}/${p.proto}`).join(", ");
+          return `<span class="connect-ports muted">${escapeHtml(portStr)}</span>`;
+        }
+        return "";
+      }
+
+      // Per-service list (+ inline map links + connection info)
       if (SERVICES.length > 1) {
         servicesCard.hidden = false;
         servicesList.innerHTML = SERVICES.map(
           (s) =>
-            `<li><span>${escapeHtml(s.name)}</span><span class="li-actions">` +
+            `<li><div class="li-info"><span>${escapeHtml(s.name)}</span>` +
+            `<div class="connect-row">${connectInfo(s)}</div></div>` +
+            `<span class="li-actions">` +
             (s.mapUrl
               ? `<a class="map-link-inline" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">` +
                 `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ${t("btn.view_map")}</a> `
@@ -255,20 +270,31 @@
         }
       }
 
-      // Single-service map link under the hero button
-      const withMap = SERVICES.filter((s) => s.mapUrl);
-      if (withMap.length > 0 && SERVICES.length === 1) {
-        mapLinksEl.innerHTML = withMap
-          .map(
-            (s) =>
-              `<a class="map-link" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">` +
-              `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ` +
-              `${escapeHtml(t("btn.view_map"))}` +
-              `</a>`,
-          )
-          .join("");
+      // Single-service: show connection info + map link under hero button
+      if (SERVICES.length === 1) {
+        const s = SERVICES[0];
+        let parts = [];
+        if (s.connectAddress || (s.ports && s.ports.length > 0)) {
+          parts.push(connectInfo(s));
+        }
+        if (s.mapUrl) {
+          parts.push(
+            `<a class="map-link" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">` +
+            `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ${escapeHtml(t("btn.view_map"))}</a>`
+          );
+        }
+        mapLinksEl.innerHTML = parts.join("");
       } else {
         mapLinksEl.innerHTML = "";
+      }
+
+      // Click-to-copy on connect addresses
+      for (const el of document.querySelectorAll("[data-copy]")) {
+        el.onclick = () => {
+          navigator.clipboard.writeText(el.dataset.copy).then(() => {
+            showToast(t("service.copied"), "success");
+          }).catch(() => {});
+        };
       }
     } catch (err) {
       console.error("refreshState failed:", err);

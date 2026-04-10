@@ -166,6 +166,9 @@
   "auth.login_title": "Sign in with passkey",
   "auth.login": "Sign in",
   "auth.logout": "Logout",
+  "service.click_to_copy": "Click to copy server address",
+  "service.copied": "Copied to clipboard",
+
   "auth.locked_title": "Bootstrap window closed",
   "auth.locked_desc": "No admins exist and the bootstrap window has expired. Restart the server to re-open it."
 }

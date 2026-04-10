@@ -25,6 +25,7 @@ export class BaseAdapter implements ServiceAdapter {
   readonly container: string;
   readonly ports: PortSpec[];
   readonly mapUrl?: string;
+  readonly connectAddress?: string;
   readonly capabilities: Set<Capability>;
   protected readonly config: ServiceConfig;
 
@@ -35,6 +36,7 @@ export class BaseAdapter implements ServiceAdapter {
     this.container = config.container;
     this.ports = config.ports.map((p) => ({ port: String(p.port), proto: p.proto }));
     if (config.mapUrl) this.mapUrl = config.mapUrl;
+    if (config.connectAddress) this.connectAddress = config.connectAddress;
     this.config = config;
     this.capabilities = new Set<Capability>(["lifecycle"]);
   }
