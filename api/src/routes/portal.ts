@@ -258,7 +258,7 @@ export function portalRouter(): Router {
         services,
         active: rule
           ? {
-              ip: rule.ip,
+              ips: rule.ips,
               expiresAt: rule.expiresAt ?? null,
               services: rule.services.map((s) => s.id),
             }
@@ -281,7 +281,23 @@ export function portalRouter(): Router {
       const user = getPortalUser(req);
       incCounter(knockAttempts);
 
-      const ip = clientIp(req);
+      // Same dual-stack candidate collection as /u/:token/knock —
+      // prefer client-detected `ips`, fall back to legacy `ip`, always
+      // add the server-seen socket address.
+      const bodyIps = Array.isArray((req.body as { ips?: unknown })?.ips)
+        ? ((req.body as { ips: unknown[] }).ips.filter(
+            (x): x is string => typeof x === "string",
+          ))
+        : [];
+      const bodyIp = typeof (req.body as { ip?: unknown })?.ip === "string"
+        ? (req.body as { ip: string }).ip
+        : null;
+      const serverSeenIp = clientIp(req);
+      const candidates = [
+        ...bodyIps,
+        ...(bodyIp ? [bodyIp] : []),
+        serverSeenIp,
+      ];
       const force = req.query["force"] === "true" || (req.body as { force?: boolean })?.force === true;
       const bodyServices = (req.body as { services?: unknown })?.services;
       const querySvcs = req.query["services"];
@@ -293,10 +309,22 @@ export function portalRouter(): Router {
         requested = raw.split(",").map((s) => s.trim()).filter(Boolean);
       else requested = "all";
 
-      if (isInIgnoredRange(ip, config())) {
+      const seen = new Set<string>();
+      const ips: string[] = [];
+      const c = config();
+      for (const raw of candidates) {
+        const ip = raw?.trim();
+        if (!ip || seen.has(ip)) continue;
+        seen.add(ip);
+        if (!isValidPublicIP(ip)) continue;
+        if (isInIgnoredRange(ip, c)) continue;
+        ips.push(ip);
+      }
+
+      if (ips.length === 0) {
         res.json({
           success: true,
-          ip,
+          ips: serverSeenIp ? [serverSeenIp] : [],
           ignored: true,
           expiresAt: null,
           services: [],
@@ -304,7 +332,7 @@ export function portalRouter(): Router {
         return;
       }
 
-      const result = await knockUser(user, ip, requested, registry(), {
+      const result = await knockUser(user, ips, requested, registry(), {
         force,
         ua: req.headers["user-agent"] ?? null,
       });
@@ -312,7 +340,7 @@ export function portalRouter(): Router {
         res.status(409).json({
           success: false,
           requireConfirm: result.reason,
-          oldIp: result.oldIp,
+          oldIps: result.oldIps,
           matchCount: result.matchCount,
           oldServices: result.oldServices,
         });
@@ -320,7 +348,7 @@ export function portalRouter(): Router {
       }
       res.json({
         success: true,
-        ip,
+        ips: result.rule.ips,
         expiresAt: result.expiresAt,
         services: result.rule.services.map((s) => s.id),
       });
@@ -390,8 +418,12 @@ export function portalRouter(): Router {
 
       const sessions = users.map((u) => {
         const rule = fw.rules.find((r) => r.userId === u.id);
-        const ip = rule?.ip ?? null;
-        const live = ip ? liveByIp.get(ip) ?? new Set<string>() : new Set<string>();
+        const ips = rule?.ips ?? [];
+        const live = new Set<string>();
+        for (const ip of ips) {
+          const perIp = liveByIp.get(ip);
+          if (perIp) for (const key of perIp) live.add(key);
+        }
         const services = u.allowedServices.map((sid) => {
           const adapter = registry().get(sid);
           const ports = adapter?.ports ?? [];
@@ -403,7 +435,7 @@ export function portalRouter(): Router {
             playerNames: playersByService[sid] ?? [],
           };
         });
-        return { userId: u.id, name: u.name, ip, services };
+        return { userId: u.id, name: u.name, ips, services };
       });
 
       res.json({ success: true, sessions });

@@ -71,13 +71,31 @@ export type WebAuthnCredential = z.infer<typeof WebAuthnCredentialSchema>;
 
 // ── users.json ─────────────────────────────────────────────────────────
 
-export const UserHistoryEntrySchema = z.object({
-  ip: z.string(),
-  at: IsoTimestampSchema,
-  services: z.array(z.string()),
-  ua: z.string().nullable().optional(),
-  kind: z.enum(["knock", "renew", "revoke", "auto_expire"]),
-});
+/**
+ * One row in a user's knock history. The `ips` field holds every IP that
+ * was affected by the event (so a dual-stack knock that opened both the
+ * v4 and v6 address is one row with two IPs). Old history rows stored a
+ * scalar `ip`; the z.preprocess migrates them in place on load.
+ */
+export const UserHistoryEntrySchema = z.preprocess(
+  (obj) => {
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const rec = obj as Record<string, unknown>;
+      if (!("ips" in rec) && "ip" in rec) {
+        const { ip, ...rest } = rec;
+        return { ...rest, ips: typeof ip === "string" ? [ip] : [] };
+      }
+    }
+    return obj;
+  },
+  z.object({
+    ips: z.array(z.string()),
+    at: IsoTimestampSchema,
+    services: z.array(z.string()),
+    ua: z.string().nullable().optional(),
+    kind: z.enum(["knock", "renew", "revoke", "auto_expire"]),
+  }),
+);
 export type UserHistoryEntry = z.infer<typeof UserHistoryEntrySchema>;
 
 export const UserRecordSchema = z.object({
@@ -106,14 +124,39 @@ export const RuleServiceSchema = z.object({
 });
 export type RuleService = z.infer<typeof RuleServiceSchema>;
 
-export const FirewallRuleSchema = z.object({
-  ip: z.string(),
-  addedAt: IsoTimestampSchema,
-  expiresAt: IsoTimestampSchema.nullable().optional(),
-  label: z.string().default(""),
-  userId: z.string().nullable().optional(),
-  services: z.array(RuleServiceSchema),
-});
+/**
+ * A firewall rule allows one or more IPs onto a set of service ports.
+ *
+ * The `ips` array exists so a single logical "who" (an admin's Allow My IP
+ * entry, or a child's knock) can hold both an IPv4 and an IPv6 address at
+ * once. The browser and the game client can independently pick IPv4 or IPv6
+ * (Happy Eyeballs), so we must open both to avoid the "I knocked on v6 but
+ * Minecraft connects over v4" failure mode.
+ *
+ * Older rule files on disk used a scalar `ip`. The z.preprocess step
+ * migrates them to `{ips: [ip]}` transparently on load, so no separate
+ * migration script is needed.
+ */
+export const FirewallRuleSchema = z.preprocess(
+  (obj) => {
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const rec = obj as Record<string, unknown>;
+      if (!("ips" in rec) && "ip" in rec) {
+        const { ip, ...rest } = rec;
+        return { ...rest, ips: typeof ip === "string" ? [ip] : [] };
+      }
+    }
+    return obj;
+  },
+  z.object({
+    ips: z.array(z.string()).min(1),
+    addedAt: IsoTimestampSchema,
+    expiresAt: IsoTimestampSchema.nullable().optional(),
+    label: z.string().default(""),
+    userId: z.string().nullable().optional(),
+    services: z.array(RuleServiceSchema),
+  }),
+);
 export type FirewallRule = z.infer<typeof FirewallRuleSchema>;
 
 export const FirewallRulesFileSchema = z.object({
@@ -207,16 +250,50 @@ export const UpdateUserBodySchema = z.object({
 });
 export type UpdateUserBody = z.infer<typeof UpdateUserBodySchema>;
 
-export const FirewallAddBodySchema = z.object({
-  ip: z.string(),
-  label: z.string().optional(),
-  services: z.array(z.string()).optional(),
-});
+/**
+ * Firewall add body accepts either a single `ip` (old clients) or an array
+ * of `ips` (new clients that do dual-stack IPv4+IPv6 detection). Preprocess
+ * normalizes to `ips: string[]`.
+ */
+export const FirewallAddBodySchema = z.preprocess(
+  (obj) => {
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const rec = obj as Record<string, unknown>;
+      if (!("ips" in rec) && "ip" in rec) {
+        const { ip, ...rest } = rec;
+        return { ...rest, ips: typeof ip === "string" ? [ip] : [] };
+      }
+    }
+    return obj;
+  },
+  z.object({
+    ips: z.array(z.string()).min(1),
+    label: z.string().optional(),
+    services: z.array(z.string()).optional(),
+  }),
+);
 export type FirewallAddBody = z.infer<typeof FirewallAddBodySchema>;
 
-export const FirewallRemoveBodySchema = z.object({
-  ip: z.string(),
-});
+/**
+ * Firewall remove body identifies a rule to delete. Accepts either the
+ * legacy single `ip` or the new `ips` array. Matching a rule by any of
+ * its IPs will remove the whole rule.
+ */
+export const FirewallRemoveBodySchema = z.preprocess(
+  (obj) => {
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const rec = obj as Record<string, unknown>;
+      if (!("ips" in rec) && "ip" in rec) {
+        const { ip, ...rest } = rec;
+        return { ...rest, ips: typeof ip === "string" ? [ip] : [] };
+      }
+    }
+    return obj;
+  },
+  z.object({
+    ips: z.array(z.string()).min(1),
+  }),
+);
 export type FirewallRemoveBody = z.infer<typeof FirewallRemoveBodySchema>;
 
 export const KnockBodySchema = z.object({

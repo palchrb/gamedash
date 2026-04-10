@@ -3,15 +3,24 @@
  * and protects against accidentally swapping out the home IP via:
  *
  *   1. Anchor-IP guard (client side): before each knock we fetch the
- *      device's current public IP and compare against `lastKnockedIp`
- *      stored in localStorage. If they differ, we show a blocking
- *      confirmation dialog instead of just swapping.
+ *      device's current public IPs (both v4 and v6) and compare against
+ *      `lastKnockedIps` stored in localStorage. If there's no overlap
+ *      we show a blocking confirmation dialog instead of just swapping.
  *
  *   2. Server smart-revoke (server side): even if the client guard is
  *      bypassed, the server checks ss/conntrack for live game traffic
- *      from the existing IP. If a session is live, the server returns
- *      409 {requireConfirm: "active_session"} and we show a similar
- *      confirmation dialog before sending ?force=true.
+ *      from any of the rule's IPs. If a session is live, the server
+ *      returns 409 {requireConfirm: "active_session"} and we show a
+ *      similar confirmation dialog before sending ?force=true.
+ *
+ * Dual-stack detection: the browser's own socket tells us only one
+ * family (whichever Happy Eyeballs picked). To catch the other family
+ * we call `api.ipify.org` (A-only DNS → forced IPv4) and
+ * `api6.ipify.org` (AAAA-only DNS → forced IPv6) in parallel. Either
+ * or both may fail (tracking protection, ad blocker, v6-less ISP);
+ * whatever succeeds is sent to the server, which opens UFW rules for
+ * all received addresses and relies on its own detection as the
+ * fallback floor.
  */
 
 (() => {
@@ -121,31 +130,92 @@
   }
 
   // ---- Public IP detection (anchor-IP guard) ---------------------------
-  async function detectPublicIp() {
+  /**
+   * Fetch an ipify endpoint with a short timeout. The host names carry
+   * the forced-family trick: api.ipify.org has only an A record, so
+   * the browser can only reach it over IPv4 and we always get the v4
+   * address back. api6.ipify.org has only AAAA and forces IPv6.
+   */
+  async function fetchIpifyFamily(host) {
     try {
-      const res = await fetch(`${BASE}/my-ip`);
-      const data = await res.json();
-      if (data.success && data.ip) return data.ip;
-    } catch { /* ignore */ }
-    return null;
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 3000);
+      const res = await fetch(`https://${host}`, {
+        method: "GET",
+        signal: ctrl.signal,
+        referrerPolicy: "no-referrer",
+        mode: "cors",
+        credentials: "omit",
+        cache: "no-store",
+      });
+      clearTimeout(timer);
+      if (!res.ok) return null;
+      const txt = (await res.text()).trim();
+      if (!txt || txt.length > 64) return null;
+      return txt;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Try to collect every public IP the device is reachable as.
+   * Returns an array (possibly empty). The server gets this list as
+   * `ips[]` and decides what to actually allow.
+   */
+  async function detectPublicIps() {
+    const [server, v4, v6] = await Promise.all([
+      fetch(`${BASE}/my-ip`).then((r) => r.json()).catch(() => null),
+      fetchIpifyFamily("api.ipify.org"),
+      fetchIpifyFamily("api6.ipify.org"),
+    ]);
+    const seen = new Set();
+    const out = [];
+    const push = (ip) => {
+      if (typeof ip !== "string") return;
+      const trimmed = ip.trim();
+      if (!trimmed || seen.has(trimmed)) return;
+      seen.add(trimmed);
+      out.push(trimmed);
+    };
+    if (server && server.success) {
+      if (Array.isArray(server.ips)) server.ips.forEach(push);
+      else if (server.ip) push(server.ip);
+    }
+    push(v4);
+    push(v6);
+    return out;
   }
 
   // ---- Knock --------------------------------------------------------------
   async function knock(serviceIds, { force = false, skipAnchorCheck = false } = {}) {
     const state = loadState();
 
-    // Anchor-IP guard: if we have a previous IP, compare with current
-    if (!force && !skipAnchorCheck && state.lastKnockedIp) {
-      const currentIp = await detectPublicIp();
-      if (currentIp && currentIp !== state.lastKnockedIp) {
-        const ok = await showDialog(
-          t("knock.different_network_title"),
-          t("knock.different_network_body", {
-            oldIp: state.lastKnockedIp,
-            newIp: currentIp,
-          }),
-        );
-        if (!ok) return { aborted: true };
+    // Collect the current public IPs up front so we can both anchor-
+    // check and attach them to the POST body.
+    const currentIps = await detectPublicIps();
+
+    // Anchor-IP guard: block if none of the currently-detected IPs
+    // overlaps with the stored set (= different network). Allow the
+    // merge case — e.g. a client that just gained IPv6 — through
+    // silently since there's still overlap on the v4 address.
+    if (!force && !skipAnchorCheck) {
+      const stored = Array.isArray(state.lastKnockedIps)
+        ? state.lastKnockedIps
+        : (state.lastKnockedIp ? [state.lastKnockedIp] : []);
+      if (stored.length > 0 && currentIps.length > 0) {
+        const storedSet = new Set(stored);
+        const overlap = currentIps.some((ip) => storedSet.has(ip));
+        if (!overlap) {
+          const ok = await showDialog(
+            t("knock.different_network_title"),
+            t("knock.different_network_body", {
+              oldIp: stored.join(", "),
+              newIp: currentIps.join(", "),
+            }),
+          );
+          if (!ok) return { aborted: true };
+        }
       }
     }
 
@@ -156,7 +226,10 @@
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ services: serviceIds || "all" }),
+          body: JSON.stringify({
+            services: serviceIds || "all",
+            ips: currentIps,
+          }),
         },
       );
       data = await res.json();
@@ -190,7 +263,14 @@
       return data;
     }
 
-    saveState({ lastKnockedIp: data.ip, lastKnockAt: new Date().toISOString() });
+    const savedIps = Array.isArray(data.ips)
+      ? data.ips
+      : (data.ip ? [data.ip] : currentIps);
+    saveState({
+      lastKnockedIps: savedIps,
+      lastKnockedIp: savedIps[0] || null,
+      lastKnockAt: new Date().toISOString(),
+    });
     showToast(t("knock.success"), "success");
     refreshState();
     refreshActive();
@@ -313,8 +393,9 @@
       }
       activeList.innerHTML = data.sessions
         .map((s) => {
+          const ips = Array.isArray(s.ips) ? s.ips : (s.ip ? [s.ip] : []);
           const playing = s.services.find((sv) => sv.connected);
-          const allowed = !!s.ip;
+          const allowed = ips.length > 0;
           let dot = "gray", txt = t("active.idle_unallowed");
           if (playing) {
             dot = "green";
@@ -407,7 +488,7 @@
     if (!confirm(t("users.revoke_confirm", { name: USER.name }))) return;
     try {
       await fetch(`${BASE}/revoke`, { method: "POST" });
-      saveState({ lastKnockedIp: null });
+      saveState({ lastKnockedIp: null, lastKnockedIps: [] });
       refreshState();
       showToast("Revoked", "success");
     } catch (err) {

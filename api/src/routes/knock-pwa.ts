@@ -202,7 +202,7 @@ export function knockPwaRouter(): Router {
         services,
         active: rule
           ? {
-              ip: rule.ip,
+              ips: rule.ips,
               expiresAt: rule.expiresAt ?? null,
               services: rule.services.map((s) => s.id),
             }
@@ -225,7 +225,31 @@ export function knockPwaRouter(): Router {
       await requireKnockAuthIfEnabled(user, req.params["token"] ?? "", req, res);
       incCounter(knockAttempts);
 
-      const ip = clientIp(req);
+      // Collect candidate IPs in this order of preference:
+      //   1. body.ips — the client's dual-stack detection result
+      //      (typically one IPv4 via api.ipify.org + one IPv6 via
+      //      api6.ipify.org). This is the whole point of the refactor.
+      //   2. body.ip  — legacy single-IP client fallback
+      //   3. clientIp(req) — whatever IP the TCP socket is coming from
+      //
+      // We always add clientIp(req) too, so if the client's detection
+      // failed and it sent nothing useful, we at least open the browser
+      // IP (which is what the old flow did). The server-visible address
+      // is trusted; it can't be spoofed.
+      const bodyIps = Array.isArray((req.body as { ips?: unknown })?.ips)
+        ? ((req.body as { ips: unknown[] }).ips.filter(
+            (x): x is string => typeof x === "string",
+          ))
+        : [];
+      const bodyIp = typeof (req.body as { ip?: unknown })?.ip === "string"
+        ? (req.body as { ip: string }).ip
+        : null;
+      const serverSeenIp = clientIp(req);
+      const candidates = [
+        ...bodyIps,
+        ...(bodyIp ? [bodyIp] : []),
+        serverSeenIp,
+      ];
       const force = req.query["force"] === "true" || (req.body as { force?: boolean })?.force === true;
       const bodyServices = (req.body as { services?: unknown })?.services;
       const querySvcs = req.query["services"];
@@ -237,12 +261,29 @@ export function knockPwaRouter(): Router {
         requested = raw.split(",").map((s) => s.trim()).filter(Boolean);
       else requested = "all";
 
-      if (isInIgnoredRange(ip, config())) {
-        // IP is in a range where firewall rules don't make sense
-        // (e.g. CGNAT, Tailscale). Return success without creating a rule.
+      // Dedupe, drop anything non-public or in an ignored range
+      // (CGNAT, Tailscale, RFC1918 leakage through a misconfigured
+      // proxy). The ignored-range filter only applies to IPv4 — IPv6
+      // is always considered routable here.
+      const seen = new Set<string>();
+      const ips: string[] = [];
+      const c = config();
+      for (const raw of candidates) {
+        const ip = raw?.trim();
+        if (!ip || seen.has(ip)) continue;
+        seen.add(ip);
+        if (!isValidPublicIP(ip)) continue;
+        if (isInIgnoredRange(ip, c)) continue;
+        ips.push(ip);
+      }
+
+      if (ips.length === 0) {
+        // All candidates were CGNAT / Tailscale / invalid. Legacy
+        // behavior: treat the server-seen address as "ignored" and
+        // report success so the client still shows the ready state.
         res.json({
           success: true,
-          ip,
+          ips: serverSeenIp ? [serverSeenIp] : [],
           ignored: true,
           expiresAt: null,
           services: [],
@@ -250,7 +291,7 @@ export function knockPwaRouter(): Router {
         return;
       }
 
-      const result = await knockUser(user, ip, requested, registry(), {
+      const result = await knockUser(user, ips, requested, registry(), {
         force,
         ua: req.headers["user-agent"] ?? null,
       });
@@ -258,7 +299,7 @@ export function knockPwaRouter(): Router {
         res.status(409).json({
           success: false,
           requireConfirm: result.reason,
-          oldIp: result.oldIp,
+          oldIps: result.oldIps,
           matchCount: result.matchCount,
           oldServices: result.oldServices,
         });
@@ -266,7 +307,7 @@ export function knockPwaRouter(): Router {
       }
       res.json({
         success: true,
-        ip,
+        ips: result.rule.ips,
         expiresAt: result.expiresAt,
         services: result.rule.services.map((s) => s.id),
       });
@@ -339,8 +380,12 @@ export function knockPwaRouter(): Router {
 
       const sessions = users.map((u) => {
         const rule = fw.rules.find((r) => r.userId === u.id);
-        const ip = rule?.ip ?? null;
-        const live = ip ? liveByIp.get(ip) ?? new Set<string>() : new Set<string>();
+        const ips = rule?.ips ?? [];
+        const live = new Set<string>();
+        for (const ip of ips) {
+          const perIp = liveByIp.get(ip);
+          if (perIp) for (const key of perIp) live.add(key);
+        }
         const services = u.allowedServices.map((sid) => {
           const adapter = registry().get(sid);
           const ports = adapter?.ports ?? [];
@@ -352,7 +397,7 @@ export function knockPwaRouter(): Router {
             playerNames: playersByService[sid] ?? [],
           };
         });
-        return { userId: u.id, name: u.name, ip, services };
+        return { userId: u.id, name: u.name, ips, services };
       });
 
       res.json({ success: true, sessions });

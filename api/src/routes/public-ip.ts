@@ -1,41 +1,48 @@
 /**
  * Public-IP self-lookup endpoint used by the admin dashboard.
  *
- * The admin UI needs to know the household's current public IP to offer
- * an "Allow my IP" button. Historically it called three different
- * browser-reachable services (ipify, etc.) which (a) leaks the admin's
- * browser to third parties and (b) breaks on corporate networks that
- * block those services.
+ * The admin UI needs to know the household's current public IP(s) to
+ * offer an "Allow my IP" button. A modern dual-stack household can have
+ * *both* an IPv4 and an IPv6 address reachable at the same time (Happy
+ * Eyeballs picks one per TCP connection), so we have to allow both to
+ * guarantee the game client can connect.
  *
- * This endpoint resolves the IP server-side via upstream, then returns
- * it. If the server sits behind a reverse proxy that forwards
- * X-Forwarded-For (controlled by TRUST_PROXY) req.ip already gives the
- * correct value for the tab that loaded the dashboard. Otherwise we
- * fall back to an outbound lookup against icanhazip.com over IPv4.
+ * Resolution strategy (best-effort, returns whatever we can find):
+ *   1. `req.ip` — whichever family the admin's browser is currently
+ *      using to reach us. Always included if public.
+ *   2. `ipv4.icanhazip.com` via an outbound HTTP request forced to
+ *      IPv4 (`family: 4`). Gives us the v4 address even if the
+ *      browser happened to connect over v6.
+ *   3. `ipv6.icanhazip.com` via an outbound request forced to IPv6
+ *      (`family: 6`). Gives us the v6 address.
  *
- * The outbound fallback uses a 3-second timeout and gracefully returns
- * `{success:false}` if it fails — the admin can still paste an IP by
- * hand.
+ * All three run in parallel with a 3-second timeout each. The response
+ * is `{success, ips: string[]}` — the dashboard merges with its own
+ * client-side detection (api.ipify.org / api6.ipify.org) and sends the
+ * union to `/api/firewall/add`.
  */
 
 import { Router } from "express";
 import * as http from "node:http";
 import { asyncH } from "../middleware/async-handler";
-import { isValidPublicIP, isValidPublicIPv4 } from "../lib/ip";
+import { isValidPublicIP, isValidPublicIPv4, isValidPublicIPv6 } from "../lib/ip";
 import { logger } from "../logger";
 
-const UPSTREAM_HOST = "ipv4.icanhazip.com";
 const UPSTREAM_TIMEOUT_MS = 3_000;
 
-async function fetchUpstreamIp(): Promise<string | null> {
+function fetchUpstream(
+  host: string,
+  family: 4 | 6,
+  validate: (ip: string) => boolean,
+): Promise<string | null> {
   return new Promise((resolve) => {
     const req = http.request(
       {
-        host: UPSTREAM_HOST,
+        host,
         path: "/",
         method: "GET",
         timeout: UPSTREAM_TIMEOUT_MS,
-        family: 4,
+        family,
       },
       (res) => {
         if (res.statusCode !== 200) {
@@ -51,7 +58,7 @@ async function fetchUpstreamIp(): Promise<string | null> {
         });
         res.on("end", () => {
           const ip = body.trim();
-          resolve(isValidPublicIPv4(ip) ? ip : null);
+          resolve(validate(ip) ? ip : null);
         });
       },
     );
@@ -61,35 +68,52 @@ async function fetchUpstreamIp(): Promise<string | null> {
   });
 }
 
+async function fetchUpstreamIpv4(): Promise<string | null> {
+  return fetchUpstream("ipv4.icanhazip.com", 4, isValidPublicIPv4);
+}
+
+async function fetchUpstreamIpv6(): Promise<string | null> {
+  return fetchUpstream("ipv6.icanhazip.com", 6, isValidPublicIPv6);
+}
+
 export function publicIpRouter(): Router {
   const router = Router();
 
   router.get(
     "/api/public-ip",
     asyncH(async (req, res) => {
-      // First prefer the ip the admin's browser is reaching us from,
-      // if it's routable. That's the most accurate value — no extra
-      // round-trip needed.
-      const clientIp = (req.ip ?? "").toString();
-      if (isValidPublicIP(clientIp)) {
-        res.json({ success: true, ip: clientIp, source: "client" });
-        return;
-      }
+      const found = new Set<string>();
+      const push = (ip: string | null) => {
+        if (ip && isValidPublicIP(ip) && !found.has(ip)) found.add(ip);
+      };
 
-      // Otherwise ask an upstream service.
-      try {
-        const ip = await fetchUpstreamIp();
-        if (ip) {
-          res.json({ success: true, ip, source: "upstream" });
-          return;
-        }
-      } catch (err) {
-        logger().warn(
-          { err: (err as Error).message },
-          "public-ip upstream lookup failed",
-        );
-      }
-      res.json({ success: false, ip: null });
+      // (1) What the browser reached us as, if public.
+      push((req.ip ?? "").toString());
+
+      // (2) + (3) Parallel outbound v4 + v6 lookups. Either may fail
+      // silently — e.g. an IPv4-only host can't reach
+      // ipv6.icanhazip.com. fetchUpstream returns null on failure.
+      const [v4, v6] = await Promise.all([
+        fetchUpstreamIpv4().catch((err: Error) => {
+          logger().warn({ err: err.message }, "public-ip v4 upstream failed");
+          return null;
+        }),
+        fetchUpstreamIpv6().catch((err: Error) => {
+          logger().warn({ err: err.message }, "public-ip v6 upstream failed");
+          return null;
+        }),
+      ]);
+      push(v4);
+      push(v6);
+
+      const ips = [...found];
+      res.json({
+        success: ips.length > 0,
+        ips,
+        // Back-compat: legacy clients read `.ip` — give them the first
+        // entry (whichever family we found first, preferring browser).
+        ip: ips[0] ?? null,
+      });
     }),
   );
 

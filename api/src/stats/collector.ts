@@ -42,32 +42,38 @@ export class StatsCollector {
     const fw = await loadRules();
     if (fw.rules.length === 0) return;
 
-    // Build { ip → [{userId, serviceId, ports}] } lookup.
-    const ipMap = new Map<
-      string,
-      Array<{ userId: string; serviceId: string; ports: PortSpec[] }>
-    >();
+    // Build a flat list of per-rule entries. Each rule may hold both a
+    // v4 and v6 IP; we record both so the live-check below can match on
+    // whichever family the game client actually uses.
+    interface RuleEntry {
+      userId: string;
+      serviceId: string;
+      ports: PortSpec[];
+      ips: string[];
+    }
+    const entries: RuleEntry[] = [];
     for (const rule of fw.rules) {
       if (!rule.userId) continue;
       for (const svc of rule.services) {
-        const entry = ipMap.get(rule.ip) ?? [];
-        entry.push({ userId: rule.userId, serviceId: svc.id, ports: svc.ports });
-        ipMap.set(rule.ip, entry);
+        entries.push({
+          userId: rule.userId,
+          serviceId: svc.id,
+          ports: svc.ports,
+          ips: rule.ips,
+        });
       }
     }
-    if (ipMap.size === 0) return;
+    if (entries.length === 0) return;
 
     // One batched kernel query for every port anyone cares about.
     const seenPorts = new Set<string>();
     const allPorts: PortSpec[] = [];
-    for (const entries of ipMap.values()) {
-      for (const e of entries) {
-        for (const p of e.ports) {
-          const key = `${p.port}/${p.proto}`;
-          if (seenPorts.has(key)) continue;
-          seenPorts.add(key);
-          allPorts.push(p);
-        }
+    for (const e of entries) {
+      for (const p of e.ports) {
+        const key = `${p.port}/${p.proto}`;
+        if (seenPorts.has(key)) continue;
+        seenPorts.add(key);
+        allPorts.push(p);
       }
     }
 
@@ -88,26 +94,33 @@ export class StatsCollector {
     const cutoffKey = todayKey(cutoff);
 
     await mutateStats((draft) => {
-      for (const [ip, entries] of ipMap.entries()) {
-        const live = liveByIp.get(ip) ?? new Set<string>();
-        for (const e of entries) {
-          const user = ensureBucket(draft, e.userId);
-          const wantedKeys = e.ports.map((p) => `${p.port}/${p.proto}`);
-          const playing = wantedKeys.some((k) => live.has(k));
-          if (playing) {
-            user.totalSeconds += INCREMENT_SECONDS;
-            user.perService[e.serviceId] =
-              (user.perService[e.serviceId] ?? 0) + INCREMENT_SECONDS;
-            const dayBucket = user.perDay[day] ?? {};
-            dayBucket[e.serviceId] = (dayBucket[e.serviceId] ?? 0) + INCREMENT_SECONDS;
-            user.perDay[day] = dayBucket;
-            user.lastPlayedAt = nowIso;
-            if (!user.currentSessions[e.serviceId]) {
-              user.currentSessions[e.serviceId] = nowIso;
-            }
-          } else if (user.currentSessions[e.serviceId]) {
-            delete user.currentSessions[e.serviceId];
+      for (const e of entries) {
+        // A player is "playing" if any of the rule's IPs (v4 or v6) has
+        // a live connection on one of the service's ports.
+        const wantedKeys = e.ports.map((p) => `${p.port}/${p.proto}`);
+        let playing = false;
+        for (const ip of e.ips) {
+          const live = liveByIp.get(ip);
+          if (!live) continue;
+          if (wantedKeys.some((k) => live.has(k))) {
+            playing = true;
+            break;
           }
+        }
+        const user = ensureBucket(draft, e.userId);
+        if (playing) {
+          user.totalSeconds += INCREMENT_SECONDS;
+          user.perService[e.serviceId] =
+            (user.perService[e.serviceId] ?? 0) + INCREMENT_SECONDS;
+          const dayBucket = user.perDay[day] ?? {};
+          dayBucket[e.serviceId] = (dayBucket[e.serviceId] ?? 0) + INCREMENT_SECONDS;
+          user.perDay[day] = dayBucket;
+          user.lastPlayedAt = nowIso;
+          if (!user.currentSessions[e.serviceId]) {
+            user.currentSessions[e.serviceId] = nowIso;
+          }
+        } else if (user.currentSessions[e.serviceId]) {
+          delete user.currentSessions[e.serviceId];
         }
       }
 

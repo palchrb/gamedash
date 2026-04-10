@@ -45,8 +45,14 @@ export async function listUdpFlows(): Promise<LiveConnection[]> {
   if (!stdout) return [];
   const out: LiveConnection[] = [];
   for (const line of stdout.split("\n")) {
-    if (!line.startsWith("udp")) continue;
-    const srcMatch = line.match(/src=([\d.]+)/u);
+    // Accept both IPv4 (`udp 17 29 src=1.2.3.4 ...`) and IPv6
+    // (`ipv6 10 udp 17 29 src=2001:db8::1 ...`) conntrack output.
+    // A plain `startsWith("udp")` would drop all IPv6 flows.
+    if (!/(^|\s)udp(\s|$)/u.test(line)) continue;
+    // `src=` value runs until the next whitespace — covers both dotted
+    // IPv4 and colon-hex IPv6. Non-global .match() returns the first
+    // occurrence, which is the original (client→server) tuple.
+    const srcMatch = line.match(/src=(\S+)/u);
     const dportMatch = line.match(/dport=(\d+)/u);
     if (!srcMatch || !dportMatch) continue;
     out.push({ srcIp: srcMatch[1]!, dstPort: dportMatch[1]!, proto: "udp" });
@@ -85,6 +91,25 @@ export async function isIpActiveOnPorts(
   if (!ip || ports.length === 0) return { active: false, matchCount: 0 };
   const conns = await listAllConnections(ports);
   const matches = conns.filter((c) => c.srcIp === ip);
+  return { active: matches.length > 0, matchCount: matches.length };
+}
+
+/**
+ * Multi-IP variant: returns active if *any* of the given IPs has a live
+ * connection on the given ports. Used by smart-revoke on dual-stack
+ * rules (v4 + v6) — if the game client is still connected over either
+ * protocol, we shouldn't nuke the whole rule.
+ */
+export async function isAnyIpActiveOnPorts(
+  ips: readonly string[],
+  ports: readonly PortSpec[],
+): Promise<ActiveCheckResult> {
+  if (ips.length === 0 || ports.length === 0) {
+    return { active: false, matchCount: 0 };
+  }
+  const conns = await listAllConnections(ports);
+  const set = new Set(ips);
+  const matches = conns.filter((c) => set.has(c.srcIp));
   return { active: matches.length > 0, matchCount: matches.length };
 }
 

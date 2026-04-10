@@ -52,23 +52,32 @@ export function firewallRouter(): Router {
     firewallLimiter,
     asyncH(async (req, res) => {
       const body = FirewallAddBodySchema.parse(req.body);
-      if (!isValidPublicIP(body.ip)) {
-        throw new HttpError(400, "invalid or non-public IPv4 address");
+      // Dedupe + reject any non-public address. We accept either IPv4 or
+      // IPv6 — the dashboard detects both families client-side and sends
+      // whichever the admin's browser picked, so we must allow both.
+      const ips = [...new Set(body.ips)].filter((ip) => isValidPublicIP(ip));
+      if (ips.length === 0) {
+        throw new HttpError(400, "invalid or non-public IP address");
       }
-      if (await findRuleByIp(body.ip)) {
-        throw new HttpError(409, "IP already in allowlist");
+      // Any overlap with an existing rule is treated as a conflict. We
+      // could merge instead, but manual admin rules have a label and
+      // silently merging two labelled rules hides intent.
+      for (const ip of ips) {
+        if (await findRuleByIp(ip)) {
+          throw new HttpError(409, "IP already in allowlist");
+        }
       }
       const ports = registry().collectPorts(body.services ?? null);
       if (ports.length === 0) throw new HttpError(400, "no ports resolved");
-      const errors = await ufwAllowMany(body.ip, ports);
+      const errors = await ufwAllowMany(ips, ports);
       await upsertRule({
-        ip: body.ip,
+        ips,
         addedAt: new Date().toISOString(),
         label: body.label ?? "",
         services: registry().buildRuleServices(body.services ?? null),
       });
-      await audit({ kind: "firewall.add_manual", ip: body.ip, label: body.label ?? "" });
-      res.json({ success: true, ip: body.ip, errors });
+      await audit({ kind: "firewall.add_manual", ips, label: body.label ?? "" });
+      res.json({ success: true, ips, errors });
     }),
   );
 
@@ -77,15 +86,24 @@ export function firewallRouter(): Router {
     firewallLimiter,
     asyncH(async (req, res) => {
       const body = FirewallRemoveBodySchema.parse(req.body);
-      if (!isValidPublicIP(body.ip)) {
-        throw new HttpError(400, "invalid or non-public IPv4 address");
+      // The client can pass any IP belonging to the rule — we look it up
+      // via the first match, then nuke the whole rule (all of its IPs).
+      const bodyIps = body.ips.filter((ip) => isValidPublicIP(ip));
+      if (bodyIps.length === 0) {
+        throw new HttpError(400, "invalid or non-public IP address");
       }
-      const rule = await findRuleByIp(body.ip);
+      let rule = null;
+      for (const ip of bodyIps) {
+        rule = await findRuleByIp(ip);
+        if (rule) break;
+      }
       if (!rule) throw new HttpError(404, "IP not in allowlist");
-      await ufwDeleteMany(body.ip, flattenPorts(rule));
-      await deleteRuleByIp(body.ip);
-      await audit({ kind: "firewall.remove_manual", ip: body.ip });
-      res.json({ success: true, ip: body.ip });
+      await ufwDeleteMany(rule.ips, flattenPorts(rule));
+      for (const ip of rule.ips) {
+        await deleteRuleByIp(ip);
+      }
+      await audit({ kind: "firewall.remove_manual", ips: rule.ips });
+      res.json({ success: true, ips: rule.ips });
     }),
   );
 
@@ -123,8 +141,15 @@ export function firewallRouter(): Router {
 
       const sessions = users.map((u) => {
         const rule = fw.rules.find((r) => r.userId === u.id);
-        const ip = rule?.ip ?? null;
-        const live = ip ? liveByIp.get(ip) ?? new Set<string>() : new Set<string>();
+        const ips = rule?.ips ?? [];
+        // Merge live port/proto keys across every IP in the rule — a
+        // dual-stack player might be connected over v6 even though the
+        // rule also holds their v4 address.
+        const live = new Set<string>();
+        for (const ip of ips) {
+          const perIp = liveByIp.get(ip);
+          if (perIp) for (const key of perIp) live.add(key);
+        }
         const services = u.allowedServices.map((sid) => {
           const adapter = registry().get(sid);
           const ports = adapter?.ports ?? [];
@@ -139,7 +164,7 @@ export function firewallRouter(): Router {
         return {
           userId: u.id,
           name: u.name,
-          ip,
+          ips,
           ipExpiresAt: rule?.expiresAt ?? null,
           services,
         };
