@@ -122,21 +122,11 @@
 
   // ---- Public IP detection (anchor-IP guard) ---------------------------
   async function detectPublicIp() {
-    const services = [
-      "https://api.ipify.org?format=json",
-      "https://api64.ipify.org?format=json",
-      "https://jsonip.com",
-    ];
-    for (const url of services) {
-      try {
-        const ctrl = new AbortController();
-        const timer = setTimeout(() => ctrl.abort(), 4000);
-        const res = await fetch(url, { signal: ctrl.signal });
-        clearTimeout(timer);
-        const data = await res.json();
-        if (data.ip) return data.ip;
-      } catch { /* try next */ }
-    }
+    try {
+      const res = await fetch(`${BASE}/my-ip`);
+      const data = await res.json();
+      if (data.success && data.ip) return data.ip;
+    } catch { /* ignore */ }
     return null;
   }
 
