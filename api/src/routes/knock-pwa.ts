@@ -30,9 +30,10 @@ import { HttpError } from "../middleware/error-handler";
 import { clientIp, isInIgnoredRange } from "../lib/ip";
 import { getDictForClient, resolveLang } from "../lib/i18n";
 import { knockUser, revokeUser } from "../knock/smart-revoke";
-import { findByToken } from "../repos/users";
-import { findRuleByUserId } from "../repos/firewall-rules";
+import { findByToken, listUsers } from "../repos/users";
+import { findRuleByUserId, loadRules } from "../repos/firewall-rules";
 import { summarizeUser } from "../repos/stats";
+import { listAllConnections } from "../firewall/connections";
 import { registry } from "../services/registry";
 import { config } from "../config";
 import {
@@ -287,6 +288,62 @@ export function knockPwaRouter(): Router {
     asyncH(async (req, res) => {
       const user = await userFromToken(req.params["token"]);
       res.json({ success: true, stats: await summarizeUser(user.id) });
+    }),
+  );
+
+  // Family active-sessions view — shows all users' connection status
+  router.get(
+    "/u/:token/active",
+    asyncH(async (req, res) => {
+      await userFromToken(req.params["token"]); // validate token
+      const fw = await loadRules();
+      const users = await listUsers();
+      const allPorts = registry().collectPorts();
+      const conns = await listAllConnections(allPorts);
+      const liveByIp = new Map<string, Set<string>>();
+      for (const c of conns) {
+        const set = liveByIp.get(c.srcIp) ?? new Set<string>();
+        set.add(`${c.dstPort}/${c.proto}`);
+        liveByIp.set(c.srcIp, set);
+      }
+
+      const playersByService: Record<string, string[]> = {};
+      for (const svc of registry().services.values()) {
+        if (svc.hasCapability("rcon") && svc.isRconConnected?.()) {
+          try {
+            const r = await svc.rconSend!("list");
+            const m = r.match(/There are \d+ of a max of \d+ players online:(.*)/u);
+            if (m && m[1]) {
+              playersByService[svc.id] = m[1]
+                .split(",")
+                .map((p) => p.trim())
+                .filter(Boolean);
+            }
+          } catch {
+            // ignore
+          }
+        }
+      }
+
+      const sessions = users.map((u) => {
+        const rule = fw.rules.find((r) => r.userId === u.id);
+        const ip = rule?.ip ?? null;
+        const live = ip ? liveByIp.get(ip) ?? new Set<string>() : new Set<string>();
+        const services = u.allowedServices.map((sid) => {
+          const adapter = registry().get(sid);
+          const ports = adapter?.ports ?? [];
+          const connected = ports.some((p) => live.has(`${p.port}/${p.proto}`));
+          return {
+            id: sid,
+            name: adapter?.name ?? sid,
+            connected,
+            playerNames: playersByService[sid] ?? [],
+          };
+        });
+        return { userId: u.id, name: u.name, ip, services };
+      });
+
+      res.json({ success: true, sessions });
     }),
   );
 

@@ -375,7 +375,7 @@ h3 {
 .auth-overlay {
   position: fixed;
   inset: 0;
-  background: #1a1a2e;
+  background: transparent;
   display: flex;
   align-items: center;
   justify-content: center;
