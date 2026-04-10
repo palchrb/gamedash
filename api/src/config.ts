@@ -30,8 +30,8 @@ const ConfigSchema = z.object({
     .default("info"),
   LOG_PRETTY: booleanString.optional().default("false"),
 
-  // ── Storage paths (inside the /mcdata mount) ──────────────────────────
-  DATA_DIR: z.string().default("/mcdata"),
+  // ── Storage paths (inside the /data mount) ───────────────────────────
+  DATA_DIR: z.string().default("/data"),
   SERVICES_FILE: z.string().optional(),
   USERS_FILE: z.string().optional(),
   FIREWALL_RULES_FILE: z.string().optional(),

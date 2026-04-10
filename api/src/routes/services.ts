@@ -219,7 +219,7 @@ export function servicesRouter(): Router {
   );
 
   // TODO(phase-2): re-add world upload. The previous implementation relied
-  // on a hardcoded /mcdata path; we want it to go through the adapter so
+  // on a hardcoded path; we want it to go through the adapter so
   // each MC instance lands in its own worlds dir.
 
   return router;

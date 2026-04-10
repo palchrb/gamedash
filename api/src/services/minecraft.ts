@@ -57,7 +57,7 @@ export class MinecraftAdapter extends BaseAdapter {
       password,
     });
 
-    this.dataDir = config.dataDir ?? "/mcdata";
+    this.dataDir = config.dataDir ?? "/data";
     this.logFile = config.logFile
       ? path.isAbsolute(config.logFile)
         ? config.logFile

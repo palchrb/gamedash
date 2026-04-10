@@ -6,7 +6,7 @@
  * Adding a service is a 3-step operation:
  *   1. Add the container block to your docker-compose (same docker
  *      network as the dashboard).
- *   2. Add a block to /mcdata/services.json.
+ *   2. Add a block to /data/services.json.
  *   3. Restart the dashboard container.
  */
 
