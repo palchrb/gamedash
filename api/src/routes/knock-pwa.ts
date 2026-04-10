@@ -389,8 +389,8 @@ export function knockPwaRouter(): Router {
       start_url: `/u/${token}`,
       scope: `/u/${token}`,
       display: "standalone",
-      background_color: "#1a1a2e",
-      theme_color: "#1a1a2e",
+      background_color: "#0b0b1a",
+      theme_color: "#0b0b1a",
       icons: [
         {
           src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect fill='%232d6a4f' width='192' height='192' rx='28'/%3E%3Ctext x='96' y='128' text-anchor='middle' font-size='96' font-family='sans-serif' fill='white'%3E%E2%9C%93%3C/text%3E%3C/svg%3E",
