@@ -98,6 +98,17 @@ export async function findById(id: string): Promise<UserRecord | null> {
   return data.users.find((u) => u.id === id) ?? null;
 }
 
+export async function findUserByCredentialId(
+  credentialId: string,
+): Promise<{ user: UserRecord; credential: WebAuthnCredential } | null> {
+  const data = await loadUsers();
+  for (const user of data.users) {
+    const credential = user.credentials.find((c) => c.id === credentialId);
+    if (credential) return { user, credential };
+  }
+  return null;
+}
+
 export async function findByToken(token: string): Promise<UserRecord | null> {
   if (!token) return null;
   const candidateHash = sha256Hex(token);

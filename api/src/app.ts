@@ -5,16 +5,13 @@
  *   1. trust proxy (configurable)
  *   2. pino-http request logging
  *   3. json body + cookie parser
- *   4. public routes (healthz, i18n, admin-auth)
- *   5. static admin dashboard (public/)
- *   6. static knock PWA routes under /u/:token (token-auth, not cookie)
- *   7. requireAdmin gate → all remaining /api/* routes
- *   8. central error handler (must be last)
- *
- * The admin UI itself is served as static files from `public/`. The UI
- * script is gated by requireAdmin on every API call it makes, so an
- * unauthenticated visitor gets the login page even though the HTML is
- * reachable without a cookie.
+ *   4. public routes (healthz, i18n)
+ *   5. admin auth routes (/admin/api/admin/*)
+ *   6. knock PWA routes (/u/:token/*)
+ *   7. kids portal routes (/, /portal/*, /my/*)
+ *   8. static admin dashboard (/admin/)
+ *   9. requireAdmin gate → all /admin/api/* routes
+ *  10. central error handler (must be last)
  */
 
 import * as path from "node:path";
@@ -33,6 +30,7 @@ import { firewallRouter } from "./routes/firewall";
 import { i18nRouter } from "./routes/i18n";
 import { knockPwaRouter } from "./routes/knock-pwa";
 import { opsRouter } from "./routes/ops";
+import { portalRouter } from "./routes/portal";
 import { publicIpRouter } from "./routes/public-ip";
 import { servicesRouter } from "./routes/services";
 import { statsRouter } from "./routes/stats";
@@ -72,9 +70,8 @@ export function createApp(): Express {
     next();
   });
 
-  // CORS — restrict to same origin. The admin UI and knock PWA are both
-  // served from this same Express process, so cross-origin requests are
-  // only needed if someone curls from elsewhere (which we deny).
+  // CORS — restrict to same origin. The admin UI, knock PWA, and portal
+  // are all served from this same Express process.
   app.use(
     cors({
       origin: c.ADMIN_ORIGIN,
@@ -102,26 +99,34 @@ export function createApp(): Express {
   // Readiness probe + /metrics — kept public for orchestrator probes.
   app.use(opsRouter());
 
-  // i18n bootstrap is public so even the login page can be translated.
+  // i18n bootstrap is public so even the login pages can be translated.
   app.use(i18nRouter());
 
   // Admin auth ceremony (bootstrap, register, login, logout, /me).
+  // Routes live under /admin/api/admin/* but are NOT behind requireAdmin
+  // since they handle their own auth.
   app.use(adminAuthRouter());
 
   // Per-user knock PWA. Auth is carried in the URL token, not the cookie,
   // so these routes MUST be mounted before the cookie gate below.
   app.use(knockPwaRouter());
 
+  // ── Kids portal ────────────────────────────────────────────────────
+  // Root URL (/) serves the kids portal when KNOCK_REQUIRE_PASSKEY=true,
+  // or redirects to /admin otherwise. /my/* routes are authenticated via
+  // gd_portal cookie.
+  app.use(portalRouter());
+
   // ── Static admin dashboard ─────────────────────────────────────────
   // Files are public (HTML/CSS/JS are not secrets); every XHR the page
   // makes goes through requireAdmin below and will 401 without a session.
-  app.use(express.static(path.resolve(__dirname, "..", "public")));
+  app.use("/admin", express.static(path.resolve(__dirname, "..", "public")));
 
   // ── Admin-gated API ────────────────────────────────────────────────
   // Global rate limiter for all admin endpoints. Endpoint-specific
   // limiters (auth, firewall writes) layer on top of this.
   app.use(
-    "/api",
+    "/admin/api",
     rateLimit({
       windowMs: 60_000,
       max: 120,
@@ -130,13 +135,13 @@ export function createApp(): Express {
       message: { success: false, error: "too many requests" },
     }),
   );
-  app.use("/api", requireAdmin);
-  app.use(servicesRouter());
-  app.use(usersRouter());
-  app.use(directoryRouter());
-  app.use(firewallRouter());
-  app.use(statsRouter());
-  app.use(publicIpRouter());
+  app.use("/admin/api", requireAdmin);
+  app.use("/admin", servicesRouter());
+  app.use("/admin", usersRouter());
+  app.use("/admin", directoryRouter());
+  app.use("/admin", firewallRouter());
+  app.use("/admin", statsRouter());
+  app.use("/admin", publicIpRouter());
 
   // Error handler must be last
   app.use(errorHandler);

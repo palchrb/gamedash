@@ -1,7 +1,7 @@
 {
   "name": "Minecraft Dashboard",
   "short_name": "MC Dash",
-  "start_url": "/",
+  "start_url": "/admin",
   "display": "standalone",
   "background_color": "#1a1a2e",
   "theme_color": "#1a1a2e",

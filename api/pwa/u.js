@@ -17,7 +17,10 @@
 (() => {
   const init = window.__INIT__ || {};
   const I18N = window.__I18N__ || {};
+  const PORTAL_MODE = !!init.portalMode;
+  const PORTAL_LOGIN = !!init.portalLogin;
   const TOKEN = init.token;
+  const BASE = PORTAL_MODE ? "/my" : `/u/${TOKEN}`;
   const USER = init.user || {};
   const SERVICES = init.services || [];
   const REQUIRE_PASSKEY = !!init.requirePasskey;
@@ -155,7 +158,7 @@
     let res, data;
     try {
       res = await fetch(
-        `/u/${TOKEN}/knock${force ? "?force=true" : ""}`,
+        `${BASE}/knock${force ? "?force=true" : ""}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -206,7 +209,7 @@
 
   async function refreshState() {
     try {
-      const res = await fetch(`/u/${TOKEN}/state`);
+      const res = await fetch(`${BASE}/state`);
       const data = await res.json();
       if (!data.success) return;
 
@@ -338,7 +341,7 @@
   // ---- Stats panel ------------------------------------------------------
   async function refreshStats() {
     try {
-      const res = await fetch(`/u/${TOKEN}/stats`);
+      const res = await fetch(`${BASE}/stats`);
       const data = await res.json();
       if (!data.success || !data.stats) return;
       const s = data.stats;
@@ -409,7 +412,7 @@
   revokeBtn.addEventListener("click", async () => {
     if (!confirm(t("users.revoke_confirm", { name: USER.name }))) return;
     try {
-      await fetch(`/u/${TOKEN}/revoke`, { method: "POST" });
+      await fetch(`${BASE}/revoke`, { method: "POST" });
       saveState({ lastKnockedIp: null });
       refreshState();
       showToast("Revoked", "success");
@@ -489,7 +492,7 @@
       return;
     }
     try {
-      const optsRes = await fetch(`/u/${TOKEN}/webauthn/register/options`, {
+      const optsRes = await fetch(`${BASE}/webauthn/register/options`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
@@ -499,7 +502,7 @@
         throw new Error(optsData.error || "register options failed");
       }
       const attestation = await window.webauthnRegister(optsData.options);
-      const verifyRes = await fetch(`/u/${TOKEN}/webauthn/register/verify`, {
+      const verifyRes = await fetch(`${BASE}/webauthn/register/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ response: attestation }),
@@ -515,13 +518,16 @@
     }
   }
 
+  // Auth endpoint prefix: portal uses /portal/webauthn/*, token mode uses /u/:token/webauthn/*
+  const AUTH_BASE = PORTAL_MODE ? "/portal" : BASE;
+
   async function doLogin() {
     if (!window.webauthnAuthenticate) {
       showToast(t("knock.webauthn_unsupported"), "error");
       return;
     }
     try {
-      const optsRes = await fetch(`/u/${TOKEN}/webauthn/authenticate/options`, {
+      const optsRes = await fetch(`${AUTH_BASE}/webauthn/authenticate/options`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: "{}",
@@ -531,7 +537,7 @@
         throw new Error(optsData.error || "login options failed");
       }
       const assertion = await window.webauthnAuthenticate(optsData.options);
-      const verifyRes = await fetch(`/u/${TOKEN}/webauthn/authenticate/verify`, {
+      const verifyRes = await fetch(`${AUTH_BASE}/webauthn/authenticate/verify`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ response: assertion }),
@@ -539,6 +545,11 @@
       const verifyData = await verifyRes.json();
       if (!verifyRes.ok || !verifyData.success) {
         throw new Error(verifyData.error || "login verify failed");
+      }
+      // Portal mode: redirect to /my after login (server sets cookie)
+      if (PORTAL_MODE) {
+        window.location.href = "/my";
+        return;
       }
       showToast(t("knock.auth_signed_in"), "success");
       bootPwa();
@@ -551,15 +562,21 @@
   authLoginBtn.addEventListener("click", doLogin);
 
   async function startBoot() {
+    // Portal login page: show only passkey login button, no PWA content
+    if (PORTAL_LOGIN) {
+      showAuthCard("login");
+      return;
+    }
+
     if (!REQUIRE_PASSKEY) {
       bootPwa();
       return;
     }
-    // Ask the server whether we already have a valid knock session. /state
+    // Ask the server whether we already have a valid session. /state
     // also reports whether a fresh registration window is open, so we can
     // decide between "register" / "login" / "locked" modes.
     try {
-      const res = await fetch(`/u/${TOKEN}/state`);
+      const res = await fetch(`${BASE}/state`);
       const data = await res.json();
       if (!data.success) throw new Error(data.error || "state failed");
       const auth = data.auth || {};
@@ -575,6 +592,11 @@
         showAuthCard("locked");
       }
     } catch (err) {
+      if (PORTAL_MODE) {
+        // Portal session expired — redirect to login
+        window.location.href = "/";
+        return;
+      }
       showToast(err.message || String(err), "error");
       showAuthCard("locked");
     }
@@ -584,6 +606,6 @@
 
   // Register service worker (for installability — not required for knock)
   if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register(`/u/${TOKEN}/sw.js`, { scope: `/u/${TOKEN}` }).catch(() => {});
+    navigator.serviceWorker.register(`${BASE}/sw.js`, { scope: BASE }).catch(() => {});
   }
 })();

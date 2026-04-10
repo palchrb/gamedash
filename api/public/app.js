@@ -26,7 +26,7 @@ function authMsg(text, kind = "") { const el = $("auth-msg"); el.textContent = t
 
 async function checkSessionOrLogin() {
   try {
-    const r = await fetch("/api/admin/me", { credentials: "same-origin" });
+    const r = await fetch("/admin/api/admin/me", { credentials: "same-origin" });
     if (r.ok) {
       hideAuth();
       bootApp();
@@ -39,7 +39,7 @@ async function checkSessionOrLogin() {
   showAuth();
   let bootstrap = null;
   try {
-    const r = await fetch("/api/admin/bootstrap");
+    const r = await fetch("/admin/api/admin/bootstrap");
     bootstrap = await r.json();
   } catch (err) {
     authMsg("Unable to reach server", "error");
@@ -68,7 +68,7 @@ async function authStartBootstrap() {
   authMsg("Creating admin…");
   let adminId;
   try {
-    const r = await fetch("/api/admin/bootstrap/start", {
+    const r = await fetch("/admin/api/admin/bootstrap/start", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
@@ -83,7 +83,7 @@ async function authStartBootstrap() {
   }
   authMsg("Touch your authenticator to register the passkey…");
   try {
-    const optsRes = await fetch("/api/admin/webauthn/register/options", {
+    const optsRes = await fetch("/admin/api/admin/webauthn/register/options", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
@@ -92,7 +92,7 @@ async function authStartBootstrap() {
     const optsData = await optsRes.json();
     if (!optsRes.ok || !optsData.success) throw new Error(optsData.error || "no options");
     const att = await window.webauthnRegister(optsData.options);
-    const verifyRes = await fetch("/api/admin/webauthn/register/verify", {
+    const verifyRes = await fetch("/admin/api/admin/webauthn/register/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
@@ -111,7 +111,7 @@ async function authStartBootstrap() {
 async function authLogin() {
   authMsg("Touch your authenticator…");
   try {
-    const optsRes = await fetch("/api/admin/webauthn/authenticate/options", {
+    const optsRes = await fetch("/admin/api/admin/webauthn/authenticate/options", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
@@ -119,7 +119,7 @@ async function authLogin() {
     const optsData = await optsRes.json();
     if (!optsRes.ok || !optsData.success) throw new Error(optsData.error || "no options");
     const assertion = await window.webauthnAuthenticate(optsData.options);
-    const verifyRes = await fetch("/api/admin/webauthn/authenticate/verify", {
+    const verifyRes = await fetch("/admin/api/admin/webauthn/authenticate/verify", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       credentials: "same-origin",
@@ -137,7 +137,7 @@ async function authLogin() {
 
 async function authLogout() {
   try {
-    await fetch("/api/admin/logout", { method: "POST", credentials: "same-origin" });
+    await fetch("/admin/api/admin/logout", { method: "POST", credentials: "same-origin" });
   } catch { /* ignore */ }
   window.location.reload();
 }
@@ -167,7 +167,7 @@ let CURRENT_SERVICE = null;
 
 async function loadServices() {
   try {
-    const res = await fetch("/api/services");
+    const res = await fetch("/admin/api/services");
     const data = await res.json();
     SERVICES = data.services || [];
     CURRENT_SERVICE = data.defaultId || (SERVICES[0] && SERVICES[0].id);
@@ -233,7 +233,7 @@ async function api(path, opts) {
 // --- Status polling ---
 async function refreshStatus() {
   if (!CURRENT_SERVICE) return;
-  const status = await api(`/api/services/${CURRENT_SERVICE}/status`);
+  const status = await api(`/admin/api/services/${CURRENT_SERVICE}/status`);
   if (!status || !status.success) return;
   const badge = document.getElementById("status-badge");
   const isOnline = !!status.running;
@@ -309,7 +309,7 @@ async function serverAction(action) {
   };
   const route = map[action];
   if (!route) return;
-  const data = await api(`/api/services/${CURRENT_SERVICE}/${route.path}`, {
+  const data = await api(`/admin/api/services/${CURRENT_SERVICE}/${route.path}`, {
     method: route.method,
   });
   if (data) toast(data.message || data.error || "OK");
@@ -319,7 +319,7 @@ async function serverAction(action) {
 async function setGamemode(mode) {
   if (!CURRENT_SERVICE) return;
   const data = await api(
-    `/api/services/${CURRENT_SERVICE}/command/${encodeURIComponent("gamemode " + mode + " @a")}`,
+    `/admin/api/services/${CURRENT_SERVICE}/command/${encodeURIComponent("gamemode " + mode + " @a")}`,
   );
   if (data) toast(data.response || data.error || "OK");
 }
@@ -331,7 +331,7 @@ async function sendCommand() {
   const cmd = input.value.trim();
   if (!cmd) return;
   const data = await api(
-    `/api/services/${CURRENT_SERVICE}/command/${encodeURIComponent(cmd)}`,
+    `/admin/api/services/${CURRENT_SERVICE}/command/${encodeURIComponent(cmd)}`,
   );
   const output = document.getElementById("cmd-output");
   if (data) {
@@ -346,7 +346,7 @@ async function whitelistAction(action) {
   if (!CURRENT_SERVICE) return;
   const player = document.getElementById("whitelist-player").value.trim();
   if (!player) return toast("Enter a player name", "error");
-  const data = await api(`/api/services/${CURRENT_SERVICE}/whitelist/${action}`, {
+  const data = await api(`/admin/api/services/${CURRENT_SERVICE}/whitelist/${action}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ player }),
@@ -356,7 +356,7 @@ async function whitelistAction(action) {
 
 async function showWhitelist() {
   if (!CURRENT_SERVICE) return;
-  const data = await api(`/api/services/${CURRENT_SERVICE}/whitelist`);
+  const data = await api(`/admin/api/services/${CURRENT_SERVICE}/whitelist`);
   const output = document.getElementById("whitelist-output");
   if (data) {
     output.textContent = data.response || "No data";
@@ -369,7 +369,7 @@ async function opAction(action) {
   if (!CURRENT_SERVICE) return;
   const player = document.getElementById("op-player").value.trim();
   if (!player) return toast("Enter a player name", "error");
-  const data = await api(`/api/services/${CURRENT_SERVICE}/${action}`, {
+  const data = await api(`/admin/api/services/${CURRENT_SERVICE}/${action}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ player }),
@@ -380,7 +380,7 @@ async function opAction(action) {
 // --- Worlds ---
 async function loadWorlds() {
   if (!CURRENT_SERVICE) return;
-  const data = await api(`/api/services/${CURRENT_SERVICE}/worlds`);
+  const data = await api(`/admin/api/services/${CURRENT_SERVICE}/worlds`);
   if (!data || !data.success) return;
 
   document.getElementById("current-world").textContent = data.currentWorld || "unknown";
@@ -407,7 +407,7 @@ async function loadWorlds() {
 
 async function saveCurrentWorld() {
   if (!CURRENT_SERVICE) return;
-  const data = await api(`/api/services/${CURRENT_SERVICE}/worlds/save-current`, {
+  const data = await api(`/admin/api/services/${CURRENT_SERVICE}/worlds/save-current`, {
     method: "POST",
   });
   if (data) {
@@ -420,7 +420,7 @@ async function switchWorld(name) {
   if (!CURRENT_SERVICE) return;
   if (!confirm(`Switch to world "${name}"? Server will restart.`)) return;
   const data = await api(
-    `/api/services/${CURRENT_SERVICE}/worlds/${encodeURIComponent(name)}/switch`,
+    `/admin/api/services/${CURRENT_SERVICE}/worlds/${encodeURIComponent(name)}/switch`,
     { method: "POST" },
   );
   if (data) toast(data.message || data.error || "OK");
@@ -433,7 +433,7 @@ async function createNewWorld() {
   if (!name) return toast("Enter a world name", "error");
   if (!confirm(`Generate new world "${name}"? Server will restart.`)) return;
   const data = await api(
-    `/api/services/${CURRENT_SERVICE}/worlds/${encodeURIComponent(name)}/new`,
+    `/admin/api/services/${CURRENT_SERVICE}/worlds/${encodeURIComponent(name)}/new`,
     { method: "POST" },
   );
   if (data) toast(data.message || data.error || "OK");
@@ -450,7 +450,7 @@ async function uploadWorld() {
 // --- Backups ---
 async function listBackups() {
   if (!CURRENT_SERVICE) return;
-  const data = await api(`/api/services/${CURRENT_SERVICE}/backups`);
+  const data = await api(`/admin/api/services/${CURRENT_SERVICE}/backups`);
   const list = document.getElementById("backup-list");
   if (data && data.backups) {
     list.innerHTML = data.backups.length
@@ -471,7 +471,7 @@ async function restoreBackup(name) {
   if (!CURRENT_SERVICE) return;
   if (!confirm(`Restore backup "${name}"? Server will restart.`)) return;
   const data = await api(
-    `/api/services/${CURRENT_SERVICE}/backups/${encodeURIComponent(name)}/restore`,
+    `/admin/api/services/${CURRENT_SERVICE}/backups/${encodeURIComponent(name)}/restore`,
     { method: "POST" },
   );
   if (data) toast(data.message || data.error || "OK");
@@ -479,7 +479,7 @@ async function restoreBackup(name) {
 
 // --- Firewall ---
 async function loadFirewallRules() {
-  const data = await api("/api/firewall");
+  const data = await api("/admin/api/firewall");
   const list = document.getElementById("firewall-list");
   if (data && data.rules) {
     list.innerHTML = data.rules.length
@@ -516,7 +516,7 @@ async function detectPublicIp() {
   // back to an upstream lookup if needed. This replaces the direct call
   // to ipify / jsonip that used to leak the admin's browser to third
   // parties.
-  const data = await api("/api/public-ip");
+  const data = await api("/admin/api/public-ip");
   return data && data.success ? data.ip : null;
 }
 
@@ -525,7 +525,7 @@ async function allowMyIp() {
   const ip = await detectPublicIp();
   if (!ip) return toast("Could not detect your public IP. Use manual input instead.", "error");
   if (!confirm(`Allow your public IP ${ip}?`)) return;
-  const data = await api("/api/firewall/add", {
+  const data = await api("/admin/api/firewall/add", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ip, label: "My IP" }),
@@ -540,7 +540,7 @@ async function addFirewallIp() {
   const ip = document.getElementById("firewall-ip").value.trim();
   const label = document.getElementById("firewall-label").value.trim();
   if (!ip) return toast("Enter an IP address", "error");
-  const data = await api("/api/firewall/add", {
+  const data = await api("/admin/api/firewall/add", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ip, label }),
@@ -557,7 +557,7 @@ async function addFirewallIp() {
 
 async function removeFirewallIp(ip) {
   if (!confirm(`Remove ${ip} from firewall allowlist?`)) return;
-  const data = await api("/api/firewall/remove", {
+  const data = await api("/admin/api/firewall/remove", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ip }),
@@ -571,7 +571,7 @@ async function removeFirewallIp(ip) {
 // --- Logs ---
 async function loadLogs() {
   if (!CURRENT_SERVICE) return;
-  const data = await api(`/api/services/${CURRENT_SERVICE}/logs?lines=100`);
+  const data = await api(`/admin/api/services/${CURRENT_SERVICE}/logs?lines=100`);
   const output = document.getElementById("log-output");
   if (data && data.logs) {
     output.textContent = data.logs.join("\n");
@@ -587,7 +587,7 @@ function serviceNameById(id) {
 }
 
 async function loadUsers() {
-  const data = await api("/api/users");
+  const data = await api("/admin/api/users");
   const list = document.getElementById("user-list");
   if (!list) return;
   if (!data || !data.users || data.users.length === 0) {
@@ -621,7 +621,7 @@ async function addUser() {
   if (!name) return toast(t("users.placeholder_name"), "error");
   const allowedServices = getSelectedServices();
   if (allowedServices.length === 0) return toast(t("users.no_services_selected"), "error");
-  const data = await api("/api/users", {
+  const data = await api("/admin/api/users", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, allowedServices }),
@@ -640,7 +640,7 @@ async function addUser() {
 
 async function rotateUserToken(id, name) {
   if (!confirm(t("users.rotate_confirm", { name }))) return;
-  const data = await api(`/api/users/${id}/rotate-token`, { method: "POST" });
+  const data = await api(`/admin/api/users/${id}/rotate-token`, { method: "POST" });
   if (data && data.success) {
     const url = `${window.location.origin}/u/${data.token}`;
     try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
@@ -650,7 +650,7 @@ async function rotateUserToken(id, name) {
 
 async function deleteUser(id, name) {
   if (!confirm(`${t("common.delete")} ${name}?`)) return;
-  const data = await api(`/api/users/${id}`, { method: "DELETE" });
+  const data = await api(`/admin/api/users/${id}`, { method: "DELETE" });
   if (data && data.success) {
     toast(t("users.deleted", { name }), "success");
     loadUsers();
@@ -702,7 +702,7 @@ function directoryStatusCell(entry) {
 }
 
 async function loadDirectory() {
-  const data = await api("/api/directory");
+  const data = await api("/admin/api/directory");
   const body = document.getElementById("directory-body");
   if (!body) return;
   if (!data || !data.entries || data.entries.length === 0) {
@@ -727,7 +727,7 @@ async function loadDirectory() {
 
 // --- Active sessions ------------------------------------------------------
 async function loadActiveSessions() {
-  const data = await api("/api/active-sessions");
+  const data = await api("/admin/api/active-sessions");
   const list = document.getElementById("active-sessions-list");
   if (!list || !data || !data.sessions) return;
   if (data.sessions.length === 0) {
@@ -756,7 +756,7 @@ async function loadActiveSessions() {
 
 // --- Stats leaderboard ----------------------------------------------------
 async function loadStatsLeaderboard() {
-  const data = await api("/api/stats");
+  const data = await api("/admin/api/stats");
   const list = document.getElementById("stats-leaderboard");
   if (!list || !data || !data.leaderboard) return;
   if (data.leaderboard.length === 0) {
@@ -764,7 +764,7 @@ async function loadStatsLeaderboard() {
     return;
   }
   // Map userId → name via /api/users
-  const usersData = await api("/api/users");
+  const usersData = await api("/admin/api/users");
   const nameById = {};
   if (usersData && usersData.users) {
     for (const u of usersData.users) nameById[u.id] = u.name;

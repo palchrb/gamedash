@@ -39,7 +39,7 @@ function cookieOptions(maxAgeMs: number): CookieOptions {
     httpOnly: true,
     secure,
     sameSite: "strict",
-    path: "/",
+    path: "/admin",
     maxAge: maxAgeMs,
   };
 }
@@ -132,7 +132,7 @@ export function clearAdminCookie(res: Response): void {
     httpOnly: true,
     secure,
     sameSite: "strict",
-    path: "/",
+    path: "/admin",
   });
 }
 
