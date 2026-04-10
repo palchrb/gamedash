@@ -137,6 +137,7 @@ with a clear error rather than a silent misconfiguration.
 | `KNOCK_REQUIRE_PASSKEY` | `false` | Also require a passkey on the per-child PWA |
 | `KNOCK_PASSKEY_REAUTH_HOURS` | `720` | Knock session TTL when passkey is required |
 | `KNOCK_REGISTRATION_TTL_HOURS` | `24` | Per-user passkey enrolment window |
+| `UFW_SIDECAR_URL` | `http://ufw-sidecar:9090` | URL of the UFW sidecar API |
 | `AUDIT_LOG_MAX_BYTES` | `10485760` | Audit log rotation threshold |
 | `AUDIT_LOG_MAX_FILES` | `5` | Audit log generations to keep |
 
