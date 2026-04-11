@@ -165,11 +165,62 @@ mount the dashboard can still start/stop the container and send RCON
 commands, but backup, world-switching, and log viewing won't work.
 
 The optional `mapUrl` field adds a "View world map" link in the child's
-knock PWA. The URL should point to wherever you host your map viewer
-(e.g. BlueMap proxied through Caddy — see the reverse proxy section
-below).
+knock PWA. Use this when you host the map on a separate domain and just
+want a plain outbound link. Prefer `mapProxy` (below) when you want
+gamedash to serve the map through its own origin so you don't have to
+run a second reverse proxy per service.
 
 Restart the dashboard container after editing.
+
+### Web-map proxy (`mapProxy`)
+
+Each service can additionally set a `mapProxy` block pointing at its
+internal web-map (BlueMap, dynmap, etc.) so gamedash proxies the map
+through its own origin. This means you don't need a separate subdomain
+and reverse-proxy per service — just add one line to `services.json`
+and the map appears under the same host as the dashboard.
+
+```jsonc
+{
+  "id": "mc1",
+  // ...
+  "mapProxy": {
+    "host": "bluemap",    // hostname reachable from the gamedash container
+    "port": 8100,         // BlueMap's internal web-root port
+    "scheme": "http"      // http | https, defaults to http
+  }
+}
+```
+
+The proxy is mounted at three auth-context-specific base paths:
+
+| Mount                      | Auth                                  |
+| -------------------------- | ------------------------------------- |
+| `/admin/map/<id>/`         | admin passkey session                 |
+| `/my/map/<id>/`            | portal cookie + `allowedServices`     |
+| `/u/<token>/map/<id>/`     | knock URL token + `allowedServices`   |
+
+The dashboard, kids portal, and per-child PWA automatically surface a
+"View world map" link pointing at the correct base path for the
+current viewer — no client-side code changes needed.
+
+**Requirements & caveats:**
+
+- BlueMap **must** use relative asset paths for subpath hosting to
+  work. This is the default in BlueMap v5+; older builds that emit
+  absolute `/assets/…` references will break. If the map renders blank,
+  inspect BlueMap's `index.html` and confirm the `<script>` / `<link>`
+  tags use relative URLs.
+- WebSocket upgrades are **not** proxied in this first pass, so
+  BlueMap's live-marker feature falls back to static tiles.
+- The `host:port` in `mapProxy` must be reachable from the gamedash
+  container. For BlueMap running as a sibling service on the same
+  docker network, use the service name as `host`. For BlueMap running
+  on the host, use `host.docker.internal` (Docker Desktop) or the
+  host's bridge IP.
+
+Set either `mapUrl` (external) or `mapProxy` (internal), not both.
+If both are set, `mapProxy` wins.
 
 ### Environment variables
 

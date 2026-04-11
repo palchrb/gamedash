@@ -10,6 +10,7 @@ import { Router } from "express";
 import { config } from "../config";
 import { asyncH } from "../middleware/async-handler";
 import { HttpError } from "../middleware/error-handler";
+import { resolveMapUrl } from "./map-proxy";
 import { PlayerBodySchema } from "../schemas";
 import { registry } from "../services/registry";
 import type { Capability, ServiceAdapter } from "../services/types";
@@ -31,9 +32,17 @@ export function servicesRouter(): Router {
   const router = Router();
 
   router.get("/api/services", (_req, res) => {
+    // Enrich each descriptor with the admin-context mapUrl so the
+    // dashboard can surface a link to the proxied or external map
+    // without knowing anything about the mapProxy config.
+    const enriched = registry().list().map((d) => {
+      const svc = registry().get(d.id);
+      const mapUrl = svc ? resolveMapUrl(svc, { kind: "admin" }) : undefined;
+      return mapUrl ? { ...d, mapUrl } : d;
+    });
     res.json({
       success: true,
-      services: registry().list(),
+      services: enriched,
       defaultId: config().DEFAULT_SERVICE_ID,
     });
   });

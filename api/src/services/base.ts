@@ -9,6 +9,7 @@
 import { runCmd } from "../lib/exec";
 import type {
   Capability,
+  MapProxyTarget,
   ServiceAdapter,
   ServiceDescriptor,
   ServiceStatus,
@@ -25,6 +26,7 @@ export class BaseAdapter implements ServiceAdapter {
   readonly container: string;
   readonly ports: PortSpec[];
   readonly mapUrl?: string;
+  readonly mapProxy?: MapProxyTarget;
   readonly connectAddress?: string;
   readonly capabilities: Set<Capability>;
   protected readonly config: ServiceConfig;
@@ -36,6 +38,13 @@ export class BaseAdapter implements ServiceAdapter {
     this.container = config.container;
     this.ports = config.ports.map((p) => ({ port: String(p.port), proto: p.proto }));
     if (config.mapUrl) this.mapUrl = config.mapUrl;
+    if (config.mapProxy) {
+      this.mapProxy = {
+        host: config.mapProxy.host,
+        port: config.mapProxy.port,
+        scheme: config.mapProxy.scheme,
+      };
+    }
     if (config.connectAddress) this.connectAddress = config.connectAddress;
     this.config = config;
     this.capabilities = new Set<Capability>(["lifecycle"]);

@@ -52,6 +52,7 @@ import {
   readAndRefreshPortalSession,
 } from "../auth/portal-sessions";
 import { renderUserPwa } from "./knock-pwa";
+import { resolveMapUrl } from "./map-proxy";
 import { audit } from "../repos/audit";
 import { authFailures, incCounter, knockAttempts, knockLogins } from "../metrics";
 import type { UserRecord } from "../schemas";
@@ -129,15 +130,15 @@ function getPortalUser(req: Request): UserRecord {
 function buildServiceList(user: UserRecord) {
   return user.allowedServices.map((id) => {
     const a = registry().get(id);
-    return a
-      ? {
-          id,
-          name: a.name,
-          ports: a.ports,
-          ...(a.mapUrl ? { mapUrl: a.mapUrl } : {}),
-          ...(a.connectAddress ? { connectAddress: a.connectAddress } : {}),
-        }
-      : { id, name: id };
+    if (!a) return { id, name: id };
+    const mapUrl = resolveMapUrl(a, { kind: "portal" });
+    return {
+      id,
+      name: a.name,
+      ports: a.ports,
+      ...(mapUrl ? { mapUrl } : {}),
+      ...(a.connectAddress ? { connectAddress: a.connectAddress } : {}),
+    };
   });
 }
 
