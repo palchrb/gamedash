@@ -218,6 +218,12 @@ current viewer — no client-side code changes needed.
   docker network, use the service name as `host`. For BlueMap running
   on the host, use `host.docker.internal` (Docker Desktop) or the
   host's bridge IP.
+- When BlueMap is loaded as a **Paper plugin** (i.e. runs inside the
+  same container as the Minecraft server), set `host` to the Paper
+  container name and make sure both containers share a docker network.
+  BlueMap's plugin webserver defaults to port `8100` and binds to all
+  interfaces, so gamedash can reach it directly on the bridge — no
+  extra BlueMap config needed.
 
 Set either `mapUrl` (external) or `mapProxy` (internal), not both.
 If both are set, `mapProxy` wins.
