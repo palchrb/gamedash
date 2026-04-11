@@ -330,27 +330,25 @@
         return "";
       }
 
-      // Per-service list (+ inline map links + connection info)
+      // Per-service list — service name + connection info on the left,
+      // optional inline map link on the right. The big "Ready to play"
+      // button at the top already knocks every service at once, so we
+      // deliberately don't render a per-service knock button here; that
+      // just crowded the row on narrow phone screens.
       if (SERVICES.length > 1) {
         servicesCard.hidden = false;
         servicesList.innerHTML = SERVICES.map(
           (s) =>
             `<li><div class="li-info"><span>${escapeHtml(s.name)}</span>` +
             `<div class="connect-row">${connectInfo(s)}</div></div>` +
-            `<span class="li-actions">` +
             (s.mapUrl
-              ? `<a class="map-link-inline" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">` +
-                `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ${t("btn.view_map")}</a> `
+              ? `<span class="li-actions">` +
+                `<a class="map-link-inline" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">` +
+                `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ${t("btn.view_map")}</a>` +
+                `</span>`
               : "") +
-            `<button class="btn btn-small" data-knock-one="${escapeAttr(s.id)}">` +
-            `${t("btn.knock_one", { service: s.name })}</button></span></li>`,
+            `</li>`,
         ).join("");
-        for (const btn of servicesList.querySelectorAll("[data-knock-one]")) {
-          btn.onclick = async () => {
-            const result = await knock([btn.dataset.knockOne]);
-            if (result && !result.aborted && !result.error) startKeepAlive();
-          };
-        }
       }
 
       // Single-service: show connection info + map link under hero button

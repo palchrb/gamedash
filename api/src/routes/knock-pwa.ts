@@ -498,22 +498,27 @@ export function knockPwaRouter(): Router {
   router.get("/u/:token/manifest.json", (req, res) => {
     const token = req.params["token"];
     res.json({
-      name: "Game Knock",
-      short_name: "Play",
+      name: "Gamedash",
+      short_name: "Gamedash",
       start_url: `/u/${token}`,
       scope: `/u/${token}`,
       display: "standalone",
       background_color: "#0b0b1a",
       theme_color: "#0b0b1a",
+      description: "Gamedash — tap to play",
       icons: [
         {
-          src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect fill='%232d6a4f' width='192' height='192' rx='28'/%3E%3Ctext x='96' y='128' text-anchor='middle' font-size='96' font-family='sans-serif' fill='white'%3E%E2%9C%93%3C/text%3E%3C/svg%3E",
+          src: `/u/${token}/icon.svg`,
           sizes: "192x192 512x512",
           type: "image/svg+xml",
           purpose: "any maskable",
         },
       ],
     });
+  });
+
+  router.get("/u/:token/icon.svg", (_req, res) => {
+    res.type("image/svg+xml").sendFile(path.join(PWA_DIR, "icon.svg"));
   });
 
   router.get("/u/:token/sw.js", (_req, res) => {
