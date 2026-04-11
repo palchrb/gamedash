@@ -10,6 +10,12 @@ describe("isRconCommandAllowed", () => {
     expect(isRconCommandAllowed("gamemode creative Notch")).toBe(true);
   });
 
+  it("accepts chunky pre-gen subcommands", () => {
+    expect(isRconCommandAllowed("chunky start world square 0 0 500")).toBe(true);
+    expect(isRconCommandAllowed("chunky pause")).toBe(true);
+    expect(isRconCommandAllowed("chunky cancel")).toBe(true);
+  });
+
   it("tolerates a leading slash", () => {
     expect(isRconCommandAllowed("/say hi")).toBe(true);
   });

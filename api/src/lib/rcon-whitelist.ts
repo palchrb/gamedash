@@ -56,6 +56,10 @@ const ALLOWED: ReadonlySet<string> = new Set([
   "save-all",
   "save-on",
   "save-off",
+
+  // mod / plugin prefixes — the subcommand is passed as args and not
+  // validated, matching the "first word only" policy below.
+  "chunky",
 ]);
 
 export function isRconCommandAllowed(raw: string): boolean {
