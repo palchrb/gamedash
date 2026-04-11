@@ -862,28 +862,101 @@ function directoryStatusCell(entry) {
   return `<span class="badge badge-ok">${t("directory.active")}</span>`;
 }
 
+// Cache the most recent directory payload so the edit-services modal
+// can look up the row's current allowedServices without re-fetching.
+let DIRECTORY_ENTRIES = [];
+
 async function loadDirectory() {
   const data = await api("/admin/api/directory");
   const body = document.getElementById("directory-body");
   if (!body) return;
   if (!data || !data.entries || data.entries.length === 0) {
-    body.innerHTML = `<tr><td colspan="5" class="muted">${t("directory.empty")}</td></tr>`;
+    DIRECTORY_ENTRIES = [];
+    body.innerHTML = `<tr><td colspan="7" class="muted">${t("directory.empty")}</td></tr>`;
     return;
   }
+  DIRECTORY_ENTRIES = data.entries;
   body.innerHTML = data.entries
     .map((e) => {
       const roleLabel =
         e.role === "admin" ? t("directory.role_admin") : t("directory.role_child");
       const devices = (e.credentials || []).length;
+      // Services column: only meaningful for knock users; admins have
+      // access to everything through /admin, so render a dash instead.
+      let servicesCell = `<span class="muted">—</span>`;
+      if (e.kind === "knock") {
+        const names = (e.allowedServices || []).map(serviceNameById);
+        servicesCell = names.length
+          ? escapeHtml(names.join(", "))
+          : `<span class="muted">${t("directory.edit_services_none")}</span>`;
+      }
+      // Actions column: edit-services button for knock users only.
+      const actionsCell =
+        e.kind === "knock"
+          ? `<button class="btn btn-sm" onclick="openEditServicesModal('${escapeAttr(e.id)}')">${t("directory.edit_services")}</button>`
+          : `<span class="muted">—</span>`;
       return `<tr>
         <td><strong>${escapeHtml(e.name)}</strong></td>
         <td>${escapeHtml(roleLabel)}</td>
+        <td>${servicesCell}</td>
         <td>${devices}</td>
         <td>${escapeHtml(formatRelative(e.lastSeenAt))}</td>
         <td>${directoryStatusCell(e)}</td>
+        <td>${actionsCell}</td>
       </tr>`;
     })
     .join("");
+}
+
+// ---- Edit services modal -------------------------------------------------
+let EDIT_SERVICES_USER_ID = null;
+
+function openEditServicesModal(userId) {
+  const entry = DIRECTORY_ENTRIES.find((e) => e.id === userId && e.kind === "knock");
+  if (!entry) {
+    toast(t("common.error"), "error");
+    return;
+  }
+  EDIT_SERVICES_USER_ID = userId;
+  document.getElementById("edit-services-user-name").textContent = entry.name;
+  const wrap = document.getElementById("edit-services-checkboxes");
+  const current = new Set(entry.allowedServices || []);
+  wrap.innerHTML = SERVICES.map((s) => {
+    const checked = current.has(s.id) ? "checked" : "";
+    return `<label class="service-cb">
+      <input type="checkbox" value="${escapeAttr(s.id)}" ${checked}> ${escapeHtml(s.name)}
+    </label>`;
+  }).join(" ");
+  document.getElementById("edit-services-modal").classList.remove("hidden");
+}
+
+function closeEditServicesModal() {
+  EDIT_SERVICES_USER_ID = null;
+  document.getElementById("edit-services-modal").classList.add("hidden");
+}
+
+async function saveEditServices() {
+  if (!EDIT_SERVICES_USER_ID) return;
+  const userId = EDIT_SERVICES_USER_ID;
+  const boxes = document.querySelectorAll(
+    "#edit-services-checkboxes input[type=checkbox]",
+  );
+  const allowedServices = [];
+  for (const cb of boxes) if (cb.checked) allowedServices.push(cb.value);
+  const data = await api(`/admin/api/users/${userId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ allowedServices }),
+  });
+  if (data && data.success) {
+    const name = (data.user && data.user.name) || "";
+    toast(t("directory.edit_services_saved", { name }), "success");
+    closeEditServicesModal();
+    loadDirectory();
+    loadUsers();
+  } else if (data) {
+    toast(data.error || "Failed", "error");
+  }
 }
 
 // --- Active sessions ------------------------------------------------------

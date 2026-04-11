@@ -233,9 +233,11 @@
               <tr>
                 <th data-i18n="directory.col_name">Name</th>
                 <th data-i18n="directory.col_role">Role</th>
+                <th data-i18n="directory.col_services">Services</th>
                 <th data-i18n="directory.col_devices">Devices</th>
                 <th data-i18n="directory.col_last_seen">Last seen</th>
                 <th data-i18n="directory.col_status">Status</th>
+                <th data-i18n="directory.col_actions">Actions</th>
               </tr>
             </thead>
             <tbody id="directory-body"></tbody>
@@ -261,6 +263,19 @@
 
     <!-- Notification area -->
     <div id="toast" class="toast"></div>
+
+    <!-- Edit services modal — shown from the Directory row action. -->
+    <div id="edit-services-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-box">
+        <h3 data-i18n="directory.edit_services_title">Edit allowed services</h3>
+        <p class="card-desc" id="edit-services-user-name">…</p>
+        <div id="edit-services-checkboxes" class="service-checkboxes"></div>
+        <div class="btn-group" style="justify-content:flex-end;margin-top:16px">
+          <button class="btn" onclick="closeEditServicesModal()" data-i18n="common.cancel">Cancel</button>
+          <button class="btn btn-green" onclick="saveEditServices()" data-i18n="common.save">Save</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="webauthn.js"></script>

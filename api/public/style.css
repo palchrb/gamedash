@@ -411,6 +411,38 @@ h3 {
 /* ---- Auth overlay (Phase 1) ---- */
 .hidden { display: none !important; }
 
+/* ---- Modal dialog ---- */
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 2500;
+}
+.modal-box {
+  width: 100%;
+  max-width: 420px;
+  background: #16213e;
+  border: 1px solid #0f3460;
+  border-radius: 12px;
+  padding: 24px;
+}
+.modal-box h3 {
+  margin: 0 0 8px;
+}
+.modal-box .card-desc {
+  margin: 0 0 14px;
+}
+.modal-box .service-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 14px;
+  margin: 4px 0 0;
+}
+
 .auth-overlay {
   position: fixed;
   inset: 0;
