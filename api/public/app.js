@@ -218,8 +218,9 @@ async function loadServices() {
       sel.value = CURRENT_SERVICE;
       sel.onchange = () => {
         CURRENT_SERVICE = sel.value;
-        updateCapabilityVisibility(SERVICE_MAP[CURRENT_SERVICE]?.capabilities || []);
-        refreshStatus();
+        const caps = SERVICE_MAP[CURRENT_SERVICE]?.capabilities || [];
+        updateCapabilityVisibility(caps);
+        refreshServiceData(caps);
       };
     }
     // Apply capability gating for the initial service
@@ -230,6 +231,39 @@ async function loadServices() {
   } catch (err) {
     console.error("services load failed:", err);
   }
+}
+
+// Refresh every service-scoped panel in the Services tab. Called when
+// switching services in the dropdown so the user doesn't see stale data
+// from the previously selected server. Capability-gated panels are only
+// hit when the new service actually supports them.
+function refreshServiceData(caps) {
+  // Clear user-action output boxes that only populate on demand —
+  // otherwise they'd show results from the previous service.
+  const whitelistOut = document.getElementById("whitelist-output");
+  if (whitelistOut) { whitelistOut.textContent = ""; whitelistOut.classList.remove("visible"); }
+  const cmdOut = document.getElementById("cmd-output");
+  if (cmdOut) { cmdOut.textContent = ""; cmdOut.classList.remove("visible"); }
+
+  // Clear lists that won't be repopulated (capability missing on the
+  // new service) so old entries don't linger behind a hidden panel.
+  if (!caps.includes("worlds")) {
+    const worldList = document.getElementById("world-list");
+    if (worldList) worldList.innerHTML = "";
+  }
+  if (!caps.includes("backup")) {
+    const backupList = document.getElementById("backup-list");
+    if (backupList) backupList.innerHTML = "";
+  }
+  const logOut = document.getElementById("log-output");
+  if (logOut) { logOut.textContent = ""; logOut.classList.remove("visible"); }
+
+  // Refresh everything the new service does support.
+  refreshStatus();
+  if (caps.includes("worlds")) loadWorlds();
+  if (caps.includes("backup")) listBackups();
+  if (caps.includes("logs")) loadLogs();
+  pollCount = 0;
 }
 
 function renderServiceCheckboxes() {
