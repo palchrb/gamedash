@@ -20,7 +20,7 @@ vi.mock("../repos/firewall-rules", () => ({
   loadRules: vi.fn().mockResolvedValue({
     rules: [
       {
-        ip: "203.0.113.1",
+        ips: ["203.0.113.1"],
         userId: "u1",
         services: [{ id: "mc1", ports: [{ port: "25565", proto: "tcp" }] }],
         addedAt: new Date().toISOString(),

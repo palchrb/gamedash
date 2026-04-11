@@ -85,7 +85,7 @@ export function usersRouter(): Router {
       const rule = await findRuleByUserId(id);
       if (rule) {
         try {
-          await ufwDeleteMany(rule.ip, flattenPorts(rule));
+          await ufwDeleteMany(rule.ips, flattenPorts(rule));
         } catch {
           // logged inside
         }

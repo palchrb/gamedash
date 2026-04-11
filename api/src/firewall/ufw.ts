@@ -2,8 +2,11 @@
  * UFW firewall mutations via the sidecar HTTP API.
  *
  * ufwAllow/ufwDelete each open or close ONE (port, proto) tuple for one IP.
- * The "many" variants iterate and collect errors so a single failing port
- * doesn't abort the whole operation.
+ * The "many" variants take a list of IPs and a list of ports, and open or
+ * close the full cartesian product — so a dual-stack rule with both an
+ * IPv4 and an IPv6 address hits the sidecar twice per port. Errors are
+ * collected per (ip, port, proto) so one failing combination doesn't
+ * abort the whole operation.
  */
 
 import { logger } from "../logger";
@@ -19,38 +22,43 @@ export async function ufwDelete(ip: string, port: string, proto: "tcp" | "udp"):
 }
 
 export interface UfwError {
+  ip: string;
   port: string;
   proto: "tcp" | "udp";
   error: string;
 }
 
 export async function ufwAllowMany(
-  ip: string,
+  ips: readonly string[],
   ports: readonly PortSpec[],
 ): Promise<UfwError[]> {
   const errors: UfwError[] = [];
-  for (const { port, proto } of ports) {
-    try {
-      await ufwAllow(ip, port, proto);
-    } catch (err) {
-      errors.push({ port, proto, error: (err as Error).message });
-      logger().warn({ ip, port, proto, err: (err as Error).message }, "ufw allow failed");
+  for (const ip of ips) {
+    for (const { port, proto } of ports) {
+      try {
+        await ufwAllow(ip, port, proto);
+      } catch (err) {
+        errors.push({ ip, port, proto, error: (err as Error).message });
+        logger().warn({ ip, port, proto, err: (err as Error).message }, "ufw allow failed");
+      }
     }
   }
   return errors;
 }
 
 export async function ufwDeleteMany(
-  ip: string,
+  ips: readonly string[],
   ports: readonly PortSpec[],
 ): Promise<UfwError[]> {
   const errors: UfwError[] = [];
-  for (const { port, proto } of ports) {
-    try {
-      await ufwDelete(ip, port, proto);
-    } catch (err) {
-      errors.push({ port, proto, error: (err as Error).message });
-      logger().warn({ ip, port, proto, err: (err as Error).message }, "ufw delete failed");
+  for (const ip of ips) {
+    for (const { port, proto } of ports) {
+      try {
+        await ufwDelete(ip, port, proto);
+      } catch (err) {
+        errors.push({ ip, port, proto, error: (err as Error).message });
+        logger().warn({ ip, port, proto, err: (err as Error).message }, "ufw delete failed");
+      }
     }
   }
   return errors;

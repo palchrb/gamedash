@@ -553,12 +553,19 @@ async function loadFirewallRules() {
                 const mins = Math.floor((remaining % 3600000) / 60000);
                 meta += ` · expires in ${hrs}h ${mins}m`;
               }
+              // A rule may hold both an IPv4 and IPv6 address. Show
+              // each on its own line so the admin can tell what's
+              // covered. Removal is done by any of the IPs — we pass
+              // the first one as the key.
+              const ips = Array.isArray(r.ips) ? r.ips : (r.ip ? [r.ip] : []);
+              const ipHtml = ips.map((ip) => escapeHtml(ip)).join("<br>");
+              const primaryIp = ips[0] || "";
               return `<li class="firewall-item">
                 <span>
-                  <span class="firewall-ip">${escapeHtml(r.ip)}</span>
+                  <span class="firewall-ip">${ipHtml}</span>
                   <span class="firewall-meta">${meta}</span>
                 </span>
-                <button onclick="removeFirewallIp('${escapeHtml(r.ip)}')" class="btn btn-sm btn-red">Remove</button>
+                <button onclick="removeFirewallIp('${escapeHtml(primaryIp)}')" class="btn btn-sm btn-red">Remove</button>
               </li>`;
             }
           )
@@ -571,24 +578,81 @@ function escapeHtml(str) {
   return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
 }
 
-async function detectPublicIp() {
-  // Ask the server — it already knows req.ip from trust-proxy and falls
-  // back to an upstream lookup if needed. This replaces the direct call
-  // to ipify / jsonip that used to leak the admin's browser to third
-  // parties.
-  const data = await api("/admin/api/public-ip");
-  return data && data.success ? data.ip : null;
+/**
+ * Try to fetch an IP from an ipify endpoint with a short timeout.
+ * `api.ipify.org` has only an A record → the browser is forced to use
+ * IPv4 to reach it, so the returned IP is guaranteed to be the v4
+ * address. `api6.ipify.org` has only AAAA → forced v6. That's the
+ * whole trick for dual-stack detection from a browser.
+ */
+async function fetchIpifyFamily(host) {
+  try {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3000);
+    const res = await fetch(`https://${host}`, {
+      method: "GET",
+      signal: ctrl.signal,
+      referrerPolicy: "no-referrer",
+      mode: "cors",
+      credentials: "omit",
+      cache: "no-store",
+    });
+    clearTimeout(timer);
+    if (!res.ok) return null;
+    const txt = (await res.text()).trim();
+    if (!txt || txt.length > 64) return null;
+    return txt;
+  } catch {
+    return null;
+  }
+}
+
+async function detectPublicIps() {
+  // Kick off the three lookups in parallel:
+  //   - server-side union (req.ip + server's own v4/v6 upstream)
+  //   - client-side forced IPv4 via api.ipify.org (A-only)
+  //   - client-side forced IPv6 via api6.ipify.org (AAAA-only)
+  //
+  // Browser privacy protections (Firefox ETP, Safari ITP, ad blockers)
+  // may block one or both ipify calls; that's fine, we still have the
+  // server-side result. Conversely if the server is on a v4-only host
+  // we'll miss the v6 side unless the browser provides it. The union
+  // of all three is the most reliable answer.
+  const [srv, v4, v6] = await Promise.all([
+    api("/admin/api/public-ip").catch(() => null),
+    fetchIpifyFamily("api.ipify.org"),
+    fetchIpifyFamily("api6.ipify.org"),
+  ]);
+  const seen = new Set();
+  const out = [];
+  const push = (ip) => {
+    if (typeof ip !== "string") return;
+    const trimmed = ip.trim();
+    if (!trimmed || seen.has(trimmed)) return;
+    seen.add(trimmed);
+    out.push(trimmed);
+  };
+  if (srv && srv.success) {
+    if (Array.isArray(srv.ips)) srv.ips.forEach(push);
+    else if (srv.ip) push(srv.ip);
+  }
+  push(v4);
+  push(v6);
+  return out;
 }
 
 async function allowMyIp() {
   toast("Detecting your public IP...");
-  const ip = await detectPublicIp();
-  if (!ip) return toast("Could not detect your public IP. Use manual input instead.", "error");
-  if (!confirm(`Allow your public IP ${ip}?`)) return;
+  const ips = await detectPublicIps();
+  if (ips.length === 0) {
+    return toast("Could not detect your public IP. Use manual input instead.", "error");
+  }
+  const summary = ips.length === 1 ? ips[0] : `${ips.join(" + ")} (dual-stack)`;
+  if (!confirm(`Allow your public IP(s) ${summary}?`)) return;
   const data = await api("/admin/api/firewall/add", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ip, label: "My IP" }),
+    body: JSON.stringify({ ips, label: "My IP" }),
   });
   if (data) {
     toast(data.message || data.error || "OK", data.success ? "success" : "error");
@@ -597,13 +661,16 @@ async function allowMyIp() {
 }
 
 async function addFirewallIp() {
-  const ip = document.getElementById("firewall-ip").value.trim();
+  const input = document.getElementById("firewall-ip").value.trim();
   const label = document.getElementById("firewall-label").value.trim();
-  if (!ip) return toast("Enter an IP address", "error");
+  if (!input) return toast("Enter an IP address", "error");
+  // Allow comma- or whitespace-separated entries so an admin can paste
+  // a v4 and v6 address together when they know both.
+  const ips = input.split(/[\s,]+/u).filter(Boolean);
   const data = await api("/admin/api/firewall/add", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ip, label }),
+    body: JSON.stringify({ ips, label }),
   });
   if (data) {
     toast(data.message || data.error || "OK", data.success ? "success" : "error");
@@ -620,7 +687,7 @@ async function removeFirewallIp(ip) {
   const data = await api("/admin/api/firewall/remove", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ip }),
+    body: JSON.stringify({ ips: [ip] }),
   });
   if (data) {
     toast(data.message || data.error || "OK", data.success ? "success" : "error");
@@ -796,18 +863,20 @@ async function loadActiveSessions() {
   }
   list.innerHTML = data.sessions
     .map((s) => {
+      const ips = Array.isArray(s.ips) ? s.ips : (s.ip ? [s.ip] : []);
       const playing = s.services.find((sv) => sv.connected);
       let label;
       if (playing) {
         label = t("active.connected", { service: playing.name });
-      } else if (s.ip) {
+      } else if (ips.length > 0) {
         label = t("active.idle_allowed");
       } else {
         label = t("active.idle_unallowed");
       }
+      const ipText = ips.length > 0 ? ` · ${escapeHtml(ips.join(", "))}` : "";
       return `<li class="firewall-item">
         <span><strong>${escapeHtml(s.name)}</strong>
-          <span class="firewall-meta">${escapeHtml(label)}${s.ip ? ` · ${escapeHtml(s.ip)}` : ""}</span>
+          <span class="firewall-meta">${escapeHtml(label)}${ipText}</span>
         </span>
       </li>`;
     })

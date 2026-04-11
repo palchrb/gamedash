@@ -37,9 +37,14 @@ export async function mutateRules<T = void>(
   });
 }
 
+/**
+ * Find a rule containing the given IP. Matches if the IP appears anywhere
+ * in the rule's `ips` array — a single rule can hold both a v4 and v6
+ * address for the same logical owner, and either one is a valid key.
+ */
 export async function findRuleByIp(ip: string): Promise<FirewallRule | null> {
   const data = await loadRules();
-  return data.rules.find((r) => r.ip === ip) ?? null;
+  return data.rules.find((r) => r.ips.includes(ip)) ?? null;
 }
 
 export async function findRuleByUserId(userId: string): Promise<FirewallRule | null> {
@@ -47,19 +52,28 @@ export async function findRuleByUserId(userId: string): Promise<FirewallRule | n
   return data.rules.find((r) => r.userId === userId) ?? null;
 }
 
+/**
+ * Upsert a rule. For user-owned rules we key on `userId` (one rule per
+ * child). For admin-owned rules (Allow My IP) we key on any overlap in
+ * the `ips` set, so re-submitting the same dual-stack pair replaces the
+ * previous entry instead of duplicating it.
+ */
 export async function upsertRule(rule: FirewallRule): Promise<void> {
   await mutateRules((draft) => {
     const idx = draft.rules.findIndex((r) =>
-      rule.userId ? r.userId === rule.userId : r.ip === rule.ip,
+      rule.userId
+        ? r.userId === rule.userId
+        : r.ips.some((ip) => rule.ips.includes(ip)),
     );
     if (idx >= 0) draft.rules[idx] = rule;
     else draft.rules.push(rule);
   });
 }
 
+/** Delete any rule whose `ips` contains the given IP. */
 export async function deleteRuleByIp(ip: string): Promise<void> {
   await mutateRules((draft) => {
-    draft.rules = draft.rules.filter((r) => r.ip !== ip);
+    draft.rules = draft.rules.filter((r) => !r.ips.includes(ip));
   });
 }
 

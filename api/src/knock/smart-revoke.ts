@@ -3,16 +3,23 @@
  * button. Handles:
  *
  *   - Input validation (IP format, requested services vs user permissions)
- *   - Smart-revoke: refuses to swap an existing rule to a new IP if the
- *     old IP still has a live game session, unless the caller passes
- *     `force: true` after confirming with the user
- *   - Idempotent renew on same IP
- *   - Atomic firewall rule write + user history append
+ *   - Dual-stack awareness: a single knock can carry both an IPv4 and an
+ *     IPv6 address. Browsers and game clients pick v4 vs v6 independently
+ *     (Happy Eyeballs), so opening only one of them leaves the player
+ *     stuck. We open every detected IP and treat the set as one unit.
+ *   - Smart-revoke: refuses to swap an existing rule to a new IP set if
+ *     any of the old IPs still has a live game session, unless the
+ *     caller passes `force: true` after confirming with the user.
+ *   - Idempotent renew on overlapping IP sets. If the new knock shares
+ *     at least one IP with the existing rule, we treat it as the same
+ *     network and merge the two sets (adding any newly-detected IPs and
+ *     bumping the expiry).
+ *   - Atomic firewall rule write + user history append.
  */
 
 import { audit } from "../repos/audit";
 import { config } from "../config";
-import { isIpActiveOnPorts } from "../firewall/connections";
+import { isAnyIpActiveOnPorts } from "../firewall/connections";
 import { ufwAllowMany, ufwDeleteMany, type UfwError } from "../firewall/ufw";
 import {
   flattenPorts,
@@ -33,7 +40,7 @@ export type KnockResult =
   | {
       status: "requires_confirm";
       reason: "active_session";
-      oldIp: string;
+      oldIps: string[];
       matchCount: number;
       oldServices: string[];
     };
@@ -50,14 +57,30 @@ function resolveServices(user: UserRecord, requested: string[] | "all"): string[
   return requested.filter((id) => allowed.has(id));
 }
 
+/** Dedupe + validate the requested IP list. Throws if nothing is valid. */
+function sanitiseIps(input: readonly string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of input) {
+    if (typeof raw !== "string") continue;
+    const ip = raw.trim();
+    if (!ip || seen.has(ip)) continue;
+    if (!isValidPublicIP(ip)) continue;
+    seen.add(ip);
+    out.push(ip);
+  }
+  return out;
+}
+
 export async function knockUser(
   user: UserRecord,
-  ip: string,
+  ips: readonly string[],
   requestedServices: string[] | "all",
   registry: Registry,
   options: KnockOptions = {},
 ): Promise<KnockResult> {
-  if (!isValidPublicIP(ip)) {
+  const newIps = sanitiseIps(ips);
+  if (newIps.length === 0) {
     throw new Error("Invalid or non-public IP address");
   }
   const serviceIds = resolveServices(user, requestedServices);
@@ -76,44 +99,77 @@ export async function knockUser(
   // lock so no concurrent knock can see stale rule state (TOCTOU fix).
   return mutateRules(async (draft) => {
     const existingIdx = draft.rules.findIndex((r) => r.userId === user.id);
-    const existing = existingIdx >= 0 ? draft.rules[existingIdx] : null;
+    const existing = existingIdx >= 0 ? draft.rules[existingIdx] ?? null : null;
     const now = Date.now();
     const expiresAt = new Date(now + ttlMs).toISOString();
 
-    // ── Same IP: just bump the expiry ──
-    // UFW rules are permanent until explicitly deleted (by sweep or
-    // manual revoke), so all we do here is push out expiresAt.
-    if (existing && existing.ip === ip) {
-      draft.rules[existingIdx] = { ...existing, expiresAt };
-      return { status: "ok" as const, rule: draft.rules[existingIdx], expiresAt, errors: [] };
+    // ── Overlap with existing rule → same network, merge + bump expiry ──
+    // Any overlap in the IP sets means the client is on the same network
+    // and one of the two stacks (v4/v6) is reachable via both knocks.
+    // We merge to a superset so a client that newly acquired an IPv6
+    // address gets it opened without losing the already-working IPv4.
+    if (existing) {
+      const existingSet = new Set(existing.ips);
+      const overlap = newIps.some((ip) => existingSet.has(ip));
+      if (overlap) {
+        const mergedIps = [...new Set([...existing.ips, ...newIps])];
+        const addedIps = mergedIps.filter((ip) => !existingSet.has(ip));
+        let errors: UfwError[] = [];
+        if (addedIps.length > 0) {
+          errors = await ufwAllowMany(addedIps, portList);
+        }
+        draft.rules[existingIdx] = {
+          ...existing,
+          ips: mergedIps,
+          expiresAt,
+          // Re-bind the label in case requested services changed.
+          label: `${user.name} via ${serviceIds.join(",")}`,
+          services: registry.buildRuleServices(serviceIds),
+        };
+        if (addedIps.length > 0) {
+          await pushHistory(user.id, {
+            ips: addedIps,
+            at: new Date().toISOString(),
+            services: serviceIds,
+            ua: options.ua ?? null,
+            kind: "renew",
+          });
+        }
+        return {
+          status: "ok" as const,
+          rule: draft.rules[existingIdx]!,
+          expiresAt,
+          errors,
+        };
+      }
     }
 
-    // ── Different IP: smart-revoke check ──
+    // ── Different network: smart-revoke check ──
     if (existing && !options.force) {
       const oldPorts = flattenPorts(existing);
-      const active = await isIpActiveOnPorts(existing.ip, oldPorts);
+      const active = await isAnyIpActiveOnPorts(existing.ips, oldPorts);
       if (active.active) {
         await audit({
           kind: "knock.blocked_active_session",
           userId: user.id,
-          oldIp: existing.ip,
-          newIp: ip,
+          oldIps: existing.ips,
+          newIps,
           matchCount: active.matchCount,
         });
         return {
           status: "requires_confirm" as const,
           reason: "active_session" as const,
-          oldIp: existing.ip,
+          oldIps: existing.ips,
           matchCount: active.matchCount,
           oldServices: existing.services.map((s) => s.id),
         };
       }
     }
 
-    // ── Different IP: safe to swap ──
+    // ── Different network: safe to swap ──
     if (existing) {
       try {
-        await ufwDeleteMany(existing.ip, flattenPorts(existing));
+        await ufwDeleteMany(existing.ips, flattenPorts(existing));
       } catch {
         // logged inside ufwDeleteMany
       }
@@ -121,14 +177,14 @@ export async function knockUser(
       await audit({
         kind: "knock.revoke",
         userId: user.id,
-        ip: existing.ip,
+        ips: existing.ips,
         reason: "ip_change",
       });
     }
 
-    const errors = await ufwAllowMany(ip, portList);
+    const errors = await ufwAllowMany(newIps, portList);
     const rule: FirewallRule = {
-      ip,
+      ips: newIps,
       addedAt: new Date().toISOString(),
       expiresAt,
       label: `${user.name} via ${serviceIds.join(",")}`,
@@ -137,33 +193,33 @@ export async function knockUser(
     };
     draft.rules.push(rule);
     await pushHistory(user.id, {
-      ip,
+      ips: newIps,
       at: rule.addedAt,
       services: serviceIds,
       ua: options.ua ?? null,
       kind: "knock",
     });
     if (!options.skipAudit) {
-      await audit({ kind: "knock.allow", userId: user.id, ip, services: serviceIds });
+      await audit({ kind: "knock.allow", userId: user.id, ips: newIps, services: serviceIds });
     }
     return { status: "ok" as const, rule, expiresAt, errors };
   });
 }
 
 /** Manually revoke a user's active rule (admin or self-service). */
-export async function revokeUser(userId: string): Promise<{ removed: boolean; ip?: string }> {
+export async function revokeUser(userId: string): Promise<{ removed: boolean; ips?: string[] }> {
   return mutateRules(async (draft) => {
     const idx = draft.rules.findIndex((r) => r.userId === userId);
     if (idx < 0) return { removed: false };
     const rule = draft.rules[idx]!;
     try {
-      await ufwDeleteMany(rule.ip, flattenPorts(rule));
+      await ufwDeleteMany(rule.ips, flattenPorts(rule));
     } catch {
       // logged inside
     }
     draft.rules.splice(idx, 1);
-    await audit({ kind: "knock.revoke_manual", userId, ip: rule.ip });
-    return { removed: true, ip: rule.ip };
+    await audit({ kind: "knock.revoke_manual", userId, ips: rule.ips });
+    return { removed: true, ips: rule.ips };
   });
 }
 
@@ -186,14 +242,14 @@ export async function sweepExpiredRules(): Promise<number> {
   });
   for (const rule of toRemove) {
     try {
-      await ufwDeleteMany(rule.ip, flattenPorts(rule));
+      await ufwDeleteMany(rule.ips, flattenPorts(rule));
     } catch {
       // logged inside
     }
     await audit({
       kind: "knock.auto_expire",
       userId: rule.userId ?? null,
-      ip: rule.ip,
+      ips: rule.ips,
     });
   }
   return expiredCount;
