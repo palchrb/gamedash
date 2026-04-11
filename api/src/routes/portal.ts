@@ -446,22 +446,27 @@ export function portalRouter(): Router {
 
   router.get("/my/manifest.json", (_req, res) => {
     res.json({
-      name: "Game Knock",
-      short_name: "Play",
+      name: "Gamedash",
+      short_name: "Gamedash",
       start_url: "/my",
       scope: "/my",
       display: "standalone",
       background_color: "#0b0b1a",
       theme_color: "#0b0b1a",
+      description: "Gamedash — tap to play",
       icons: [
         {
-          src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 192 192'%3E%3Crect fill='%232d6a4f' width='192' height='192' rx='28'/%3E%3Ctext x='96' y='128' text-anchor='middle' font-size='96' font-family='sans-serif' fill='white'%3E%E2%9C%93%3C/text%3E%3C/svg%3E",
+          src: "/my/icon.svg",
           sizes: "192x192 512x512",
           type: "image/svg+xml",
           purpose: "any maskable",
         },
       ],
     });
+  });
+
+  router.get("/my/icon.svg", (_req, res) => {
+    res.type("image/svg+xml").sendFile(path.join(PWA_DIR, "icon.svg"));
   });
 
   router.get("/my/sw.js", (_req, res) => {
