@@ -49,6 +49,50 @@ Then:
 > proxy**. The admin UI is passkey-gated, but TLS termination and
 > rate-limiting are expected to come from an upstream proxy.
 
+## Host permissions
+
+The gamedash image runs as the non-root `node` user (uid 1000) inside
+the container. Two things on the host need to be reachable by that
+uid, and both fail silently at install time only to surface as a 500
+when you click **Start** or **Backup**:
+
+### 1. Docker socket
+
+`/var/run/docker.sock` is owned by `root:docker` with mode `0660`, so
+bind-mounting it is not enough — uid 1000 inside the container also
+needs to be a member of a group with the host's `docker` GID. The
+shipped `docker-compose.yml` does this via `group_add`, reading the
+GID from `DOCKER_GID` in `.env`. Discover and set it once:
+
+```bash
+echo "DOCKER_GID=$(getent group docker | cut -d: -f3)" >> .env
+docker compose up -d
+```
+
+If you skip this you get `permission denied while trying to connect to
+the docker API at unix:///var/run/docker.sock` on every start/stop.
+
+### 2. Game server data directories
+
+The host directory you bind-mount to `/mc-data` (or whatever your
+`dataDir` is) must be writable by uid 1000 — that's where gamedash
+writes backups and does world switching. If the Minecraft server was
+started with a different uid, the mount will be read-only from
+gamedash's point of view and you'll see `EACCES: permission denied,
+mkdir '/mc-data/backups/...'`.
+
+The simplest fix is to chown the host directory so both gamedash and
+the MC container can write it. `itzg/minecraft-server` defaults to uid
+1000 too, so in the common case this is a no-op:
+
+```bash
+sudo chown -R 1000:1000 /path/to/mc-server/data
+```
+
+If your MC container runs as a different uid, either (a) align them by
+passing `UID=1000` / `GID=1000` to the MC container, or (b) give both
+uids access via a shared group and `chmod g+rwX -R` the directory.
+
 ## Configuration
 
 ### `services.json` (required)

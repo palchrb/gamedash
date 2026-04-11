@@ -48,7 +48,19 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       # Mount game server data dirs for backup / world-switching / logs.
       # The paths below must match the dataDir values in services.json.
+      # Make sure the host path is writable by uid 1000 (the `node` user
+      # inside the gamedash image) — see the "Permissions" section in
+      # README.md for the one-liner chown.
       # - /path/to/mc-server/data:/mc-data
+    # The container runs as `node` (uid 1000) and needs to reach the host
+    # docker daemon via the socket above. Bind-mounting the socket alone
+    # is not enough — the socket is owned by root:docker, so we must add
+    # uid 1000 to the host's docker group by its GID. On Debian/Ubuntu
+    # that is usually 999; discover yours with:
+    #     getent group docker | cut -d: -f3
+    # and set DOCKER_GID=<that number> in .env.
+    group_add:
+      - "${DOCKER_GID:-999}"
     networks:
       - default
       # Join the Minecraft server's network so RCON can reach it by
