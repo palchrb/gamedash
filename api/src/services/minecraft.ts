@@ -190,12 +190,51 @@ export class MinecraftAdapter extends BaseAdapter {
     const backupName = `${currentWorldName}-${timestamp}`;
     const backupPath = path.join(this.backupsDir, backupName);
 
+    // If RCON is connected the server is live — disable autosave and
+    // flush outstanding chunks to disk before we copy, so we don't
+    // catch a region file mid-write. Re-enable autosave in a finally
+    // block so a failed copy doesn't leave the server stuck with
+    // saving disabled forever (which would eventually lose data).
+    //
+    // `save-all flush` blocks on Paper/Spigot until every chunk is
+    // written, but we still wait a short settle before the copy to
+    // cover FS buffering (and NFS-mounted data dirs).
+    const serverIsLive = this.rcon.isConnected();
+    let autosaveDisabled = false;
     try {
-      if (this.rcon.isConnected()) await this.rcon.send("say Server backup in progress...");
-    } catch {
-      // ignore
+      if (serverIsLive) {
+        try {
+          await this.rcon.send("say Server backup in progress...");
+        } catch {
+          // cosmetic broadcast; ignore failure
+        }
+        try {
+          await this.rcon.send("save-off");
+          autosaveDisabled = true;
+          await this.rcon.send("save-all flush");
+          await new Promise<void>((resolve) => setTimeout(resolve, 500));
+        } catch (err) {
+          logger().warn(
+            { err: (err as Error).message, id: this.id },
+            "backup: rcon flush failed, copying anyway",
+          );
+        }
+      }
+      fsExtra.copySync(this.activeWorldDir, backupPath);
+    } finally {
+      if (autosaveDisabled) {
+        try {
+          await this.rcon.send("save-on");
+        } catch (err) {
+          // Failing to re-enable autosave is genuinely bad — the
+          // server will stop persisting player actions. Log loudly.
+          logger().error(
+            { err: (err as Error).message, id: this.id },
+            "backup: FAILED to re-enable autosave via save-on",
+          );
+        }
+      }
     }
-    fsExtra.copySync(this.activeWorldDir, backupPath);
     this.pruneOldBackups();
     return { name: backupName, path: backupPath };
   }
