@@ -184,9 +184,9 @@ li:last-child { border-bottom: none; }
   transition: background 0.15s;
 }
 .map-link-inline:active { background: rgba(255,255,255,0.1); }
-.li-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.li-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
 .li-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
-.connect-row { font-size: 13px; }
+.connect-row { font-size: 13px; min-width: 0; overflow-wrap: anywhere; }
 .connect-addr {
   font-family: monospace;
   background: rgba(255,255,255,0.08);
@@ -194,6 +194,7 @@ li:last-child { border-bottom: none; }
   border-radius: 4px;
   cursor: pointer;
   user-select: all;
+  overflow-wrap: anywhere;
 }
 .connect-ports { font-size: 12px; }
 .map-icon { font-style: normal; }
