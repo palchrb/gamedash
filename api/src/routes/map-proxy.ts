@@ -29,6 +29,13 @@
  * BlueMap's live-marker feature (which uses a WS channel) will fall
  * back to static tiles. Add WS upgrade handling if someone actually
  * uses the live feature.
+ *
+ * ── Mount-path stripping ──────────────────────────────────────────────
+ * `http-proxy-middleware` v2 replaces `req.url` with `req.originalUrl`
+ * inside `prepareProxyRequest`, which undoes Express' automatic strip
+ * of the mount path. We therefore re-strip the prefix explicitly via
+ * `pathRewrite` in `buildProxy()`. Without that, BlueMap receives the
+ * full `/admin/map/mc1/…` and 404s the request.
  */
 
 import type {
@@ -63,12 +70,24 @@ function targetUrl(mp: MapProxyTarget): string {
 }
 
 /**
- * Create the proxy middleware for a single service. The middleware
- * relies on `app.use("/.../:id", …)` to strip the mount prefix, so
- * `req.url` that reaches the proxy is already relative to the BlueMap
- * web-root (e.g. `/assets/index.js`).
+ * Create the proxy middleware for a single service.
+ *
+ * IMPORTANT: `http-proxy-middleware` v2 overrides `req.url` with
+ * `req.originalUrl` before forwarding (see its `prepareProxyRequest`),
+ * so Express' automatic mount-path stripping is effectively undone.
+ * That means BlueMap would receive the full `/admin/map/mc1/...` path
+ * unless we re-strip it here via `pathRewrite`. Without this, BlueMap
+ * 404s the request and the browser sees a non-renderable response,
+ * which it offers as a download named after the last path segment.
+ *
+ * `rewritePath` receives the full (original) path and must return the
+ * path as BlueMap should see it (`/` for the root, `/assets/foo.js`,
+ * etc).
  */
-function buildProxy(svc: ServiceAdapter): RequestHandler {
+function buildProxy(
+  svc: ServiceAdapter,
+  rewritePath: (p: string) => string,
+): RequestHandler {
   const mp = svc.mapProxy!;
   return createProxyMiddleware({
     target: targetUrl(mp),
@@ -81,6 +100,7 @@ function buildProxy(svc: ServiceAdapter): RequestHandler {
     ws: false,
     // Keep log output sane in production.
     logLevel: "warn",
+    pathRewrite: (path) => rewritePath(path),
     onError: (err, _req, res) => {
       // Type-narrow: in the HTTP path the res is a ServerResponse.
       if ("headersSent" in res && !res.headersSent && "status" in res) {
@@ -91,6 +111,24 @@ function buildProxy(svc: ServiceAdapter): RequestHandler {
       }
     },
   });
+}
+
+/** Build a string-prefix stripper that collapses an empty result to "/". */
+function stripPrefix(prefix: string): (p: string) => string {
+  return (p) => {
+    if (p === prefix) return "/";
+    if (p.startsWith(`${prefix}/`)) return p.slice(prefix.length) || "/";
+    if (p.startsWith(`${prefix}?`)) return `/${p.slice(prefix.length)}`;
+    return p;
+  };
+}
+
+/** Build a regex stripper for paths with a dynamic segment (e.g. token). */
+function stripRegex(re: RegExp): (p: string) => string {
+  return (p) => {
+    const rewritten = p.replace(re, "");
+    return rewritten === "" ? "/" : rewritten;
+  };
 }
 
 /**
@@ -118,7 +156,7 @@ export function mountAdminMapProxy(app: Mountable): void {
   for (const svc of registry().services.values()) {
     if (!svc.mapProxy) continue;
     const base = `/admin/map/${svc.id}`;
-    const proxy = buildProxy(svc);
+    const proxy = buildProxy(svc, stripPrefix(base));
     app.use(base, trailingSlashRedirect(base), requireAdmin, proxy);
   }
 }
@@ -134,7 +172,7 @@ export function mountPortalMapProxy(app: Mountable): void {
     if (!svc.mapProxy) continue;
     const serviceId = svc.id;
     const base = `/my/map/${serviceId}`;
-    const proxy = buildProxy(svc);
+    const proxy = buildProxy(svc, stripPrefix(base));
 
     const portalGate = asyncH(async (req: Request, res: Response, next: NextFunction) => {
       const session = await readAndRefreshPortalSession(req, res);
@@ -165,7 +203,14 @@ export function mountTokenMapProxy(app: Mountable): void {
     if (!svc.mapProxy) continue;
     const serviceId = svc.id;
     const base = `/u/:token/map/${serviceId}`;
-    const proxy = buildProxy(svc);
+    // Escape regex-special characters in the service id before
+    // interpolating it into the strip regex — a dot or bracket would
+    // otherwise widen the match.
+    const safeId = serviceId.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
+    const proxy = buildProxy(
+      svc,
+      stripRegex(new RegExp(`^/u/[^/]+/map/${safeId}`, "u")),
+    );
 
     const tokenGate = asyncH(async (req: Request, res: Response, next: NextFunction) => {
       const token = req.params["token"] ?? "";
