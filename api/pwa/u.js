@@ -4,8 +4,13 @@
  *
  *   1. Anchor-IP guard (client side): before each knock we fetch the
  *      device's current public IPs (both v4 and v6) and compare against
- *      `lastKnockedIps` stored in localStorage. If there's no overlap
- *      we show a blocking confirmation dialog instead of just swapping.
+ *      the server's *currently active* rule IPs via GET /state. If
+ *      there's no overlap we show a blocking confirmation dialog
+ *      instead of just swapping. We deliberately do NOT use localStorage
+ *      here: the firewall rule is shared across all devices on the
+ *      same account, so device B must see what device A already
+ *      knocked — otherwise you get false "new IP" warnings just
+ *      because device B's cache is stale.
  *
  *   2. Server smart-revoke (server side): even if the client guard is
  *      bypassed, the server checks ss/conntrack for live game traffic
@@ -189,28 +194,34 @@
 
   // ---- Knock --------------------------------------------------------------
   async function knock(serviceIds, { force = false, skipAnchorCheck = false } = {}) {
-    const state = loadState();
-
     // Collect the current public IPs up front so we can both anchor-
     // check and attach them to the POST body.
     const currentIps = await detectPublicIps();
 
-    // Anchor-IP guard: block if none of the currently-detected IPs
-    // overlaps with the stored set (= different network). Allow the
-    // merge case — e.g. a client that just gained IPv6 — through
-    // silently since there's still overlap on the v4 address.
+    // Anchor-IP guard: compare the currently-detected IPs against the
+    // server's active rule (authoritative, shared across all devices
+    // for this user). If another device just knocked from a new
+    // network, the rule already reflects that — so we shouldn't warn
+    // on this device merely because its local cache is stale.
     if (!force && !skipAnchorCheck) {
-      const stored = Array.isArray(state.lastKnockedIps)
-        ? state.lastKnockedIps
-        : (state.lastKnockedIp ? [state.lastKnockedIp] : []);
-      if (stored.length > 0 && currentIps.length > 0) {
-        const storedSet = new Set(stored);
-        const overlap = currentIps.some((ip) => storedSet.has(ip));
+      let serverIps = [];
+      try {
+        const r = await fetch(`${BASE}/state`);
+        const d = await r.json();
+        if (d && d.success && d.active && Array.isArray(d.active.ips)) {
+          serverIps = d.active.ips;
+        }
+      } catch {
+        // Silent fallback — no server state means no guard.
+      }
+      if (serverIps.length > 0 && currentIps.length > 0) {
+        const serverSet = new Set(serverIps);
+        const overlap = currentIps.some((ip) => serverSet.has(ip));
         if (!overlap) {
           const ok = await showDialog(
             t("knock.different_network_title"),
             t("knock.different_network_body", {
-              oldIp: stored.join(", "),
+              oldIp: serverIps.join(", "),
               newIp: currentIps.join(", "),
             }),
           );
@@ -253,9 +264,8 @@
     }
 
     if (data.ignored) {
-      // IP is in an ignored range (CGNAT/Tailscale) — no firewall rule
-      // needed. Show success without storing anchor-IP (it would be
-      // meaningless and break the guard on the next visit).
+      // IP is in an ignored range (CGNAT/Tailscale) — no firewall
+      // rule needed. Just show success.
       showToast(t("knock.success"), "success");
       refreshState();
       refreshActive();
@@ -263,14 +273,7 @@
       return data;
     }
 
-    const savedIps = Array.isArray(data.ips)
-      ? data.ips
-      : (data.ip ? [data.ip] : currentIps);
-    saveState({
-      lastKnockedIps: savedIps,
-      lastKnockedIp: savedIps[0] || null,
-      lastKnockAt: new Date().toISOString(),
-    });
+    saveState({ lastKnockAt: new Date().toISOString() });
     showToast(t("knock.success"), "success");
     refreshState();
     refreshActive();
@@ -488,7 +491,6 @@
     if (!confirm(t("users.revoke_confirm", { name: USER.name }))) return;
     try {
       await fetch(`${BASE}/revoke`, { method: "POST" });
-      saveState({ lastKnockedIp: null, lastKnockedIps: [] });
       refreshState();
       showToast("Revoked", "success");
     } catch (err) {
