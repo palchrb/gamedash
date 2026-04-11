@@ -48,6 +48,7 @@ import {
   issueKnockSession,
   readAndRefreshKnockSession,
 } from "../auth/knock-sessions";
+import { resolveMapUrl } from "./map-proxy";
 import { audit } from "../repos/audit";
 import { authFailures, incCounter, knockAttempts, knockLogins } from "../metrics";
 import type { UserRecord } from "../schemas";
@@ -143,17 +144,18 @@ export function knockPwaRouter(): Router {
       }
       const lang = resolveLang(req, user);
       const dict = getDictForClient(lang);
+      const token = req.params["token"] ?? "";
       const services = user.allowedServices.map((id) => {
         const a = registry().get(id);
-        return a
-          ? {
-              id,
-              name: a.name,
-              ports: a.ports,
-              ...(a.mapUrl ? { mapUrl: a.mapUrl } : {}),
-              ...(a.connectAddress ? { connectAddress: a.connectAddress } : {}),
-            }
-          : { id, name: id };
+        if (!a) return { id, name: id };
+        const mapUrl = resolveMapUrl(a, { kind: "token", token });
+        return {
+          id,
+          name: a.name,
+          ports: a.ports,
+          ...(mapUrl ? { mapUrl } : {}),
+          ...(a.connectAddress ? { connectAddress: a.connectAddress } : {}),
+        };
       });
       const c = config();
       const initial = {
@@ -176,17 +178,18 @@ export function knockPwaRouter(): Router {
     asyncH(async (req, res) => {
       const user = await userFromToken(req.params["token"]);
       const rule = await findRuleByUserId(user.id);
+      const token = req.params["token"] ?? "";
       const services = user.allowedServices.map((id) => {
         const a = registry().get(id);
-        return a
-          ? {
-              id,
-              name: a.name,
-              ports: a.ports,
-              ...(a.mapUrl ? { mapUrl: a.mapUrl } : {}),
-              ...(a.connectAddress ? { connectAddress: a.connectAddress } : {}),
-            }
-          : { id, name: id };
+        if (!a) return { id, name: id };
+        const mapUrl = resolveMapUrl(a, { kind: "token", token });
+        return {
+          id,
+          name: a.name,
+          ports: a.ports,
+          ...(mapUrl ? { mapUrl } : {}),
+          ...(a.connectAddress ? { connectAddress: a.connectAddress } : {}),
+        };
       });
 
       const c = config();

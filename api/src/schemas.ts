@@ -40,6 +40,13 @@ export const ServiceConfigSchema = z.object({
     })
     .optional(),
   mapUrl: z.string().url().optional(),
+  mapProxy: z
+    .object({
+      host: z.string().min(1),
+      port: z.number().int().positive().max(65535),
+      scheme: z.enum(["http", "https"]).default("http"),
+    })
+    .optional(),
   connectAddress: z.string().optional(),
   backupsDir: z.string().optional(),
   worldsDir: z.string().optional(),

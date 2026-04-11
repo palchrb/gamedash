@@ -9,6 +9,12 @@
 
 import type { PortSpec } from "../schemas";
 
+export interface MapProxyTarget {
+  readonly host: string;
+  readonly port: number;
+  readonly scheme: "http" | "https";
+}
+
 export type Capability =
   | "lifecycle"
   | "logs"
@@ -51,6 +57,7 @@ export interface ServiceAdapter {
   readonly container: string;
   readonly ports: PortSpec[];
   readonly mapUrl?: string;
+  readonly mapProxy?: MapProxyTarget;
   readonly connectAddress?: string;
   readonly capabilities: Set<Capability>;
 

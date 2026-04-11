@@ -29,6 +29,11 @@ import { directoryRouter } from "./routes/directory";
 import { firewallRouter } from "./routes/firewall";
 import { i18nRouter } from "./routes/i18n";
 import { knockPwaRouter } from "./routes/knock-pwa";
+import {
+  mountAdminMapProxy,
+  mountPortalMapProxy,
+  mountTokenMapProxy,
+} from "./routes/map-proxy";
 import { opsRouter } from "./routes/ops";
 import { portalRouter } from "./routes/portal";
 import { publicIpRouter } from "./routes/public-ip";
@@ -116,6 +121,18 @@ export function createApp(): Express {
   // or redirects to /admin otherwise. /my/* routes are authenticated via
   // gd_portal cookie.
   app.use(portalRouter());
+
+  // ── BlueMap / web-map proxy ────────────────────────────────────────
+  // Services that set `mapProxy` in services.json get proxied through
+  // this origin at three auth-context-specific base paths:
+  //   /admin/map/:id/*        → requireAdmin
+  //   /my/map/:id/*           → portal cookie + allowedServices
+  //   /u/:token/map/:id/*     → token URL + allowedServices
+  // Mounted before the admin static handler so the proxy wins on
+  // /admin/map/* without falling through to a static 404.
+  mountAdminMapProxy(app);
+  mountPortalMapProxy(app);
+  mountTokenMapProxy(app);
 
   // ── Static admin dashboard ─────────────────────────────────────────
   // Files are public (HTML/CSS/JS are not secrets); every XHR the page

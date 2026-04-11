@@ -17,6 +17,11 @@
       ],
       "connectAddress": "play.example.com",
       "mapUrl": "https://map.example.com",
+      "mapProxy": {
+        "host": "bluemap",
+        "port": 8100,
+        "scheme": "http"
+      },
       "dataDir": "/mc-data"
     },
     {
