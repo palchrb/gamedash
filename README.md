@@ -52,27 +52,26 @@ Then:
 ## Host permissions
 
 The gamedash image runs as the non-root `node` user (uid 1000) inside
-the container. Two things on the host need to be reachable by that
-uid, and both fail silently at install time only to surface as a 500
-when you click **Start** or **Backup**:
+the container. There's one install-time footgun: bind-mounted game
+server data directories must be writable by uid 1000, or backups and
+world-switching will fail with `EACCES` at click-time.
 
-### 1. Docker socket
+### Docker socket — handled by the proxy sidecar
 
-`/var/run/docker.sock` is owned by `root:docker` with mode `0660`, so
-bind-mounting it is not enough — uid 1000 inside the container also
-needs to be a member of a group with the host's `docker` GID. The
-shipped `docker-compose.yml` does this via `group_add`, reading the
-GID from `DOCKER_GID` in `.env`. Discover and set it once:
+Gamedash needs to talk to the host docker daemon for
+start/stop/restart/inspect/logs, but it never mounts
+`/var/run/docker.sock` directly. Instead the shipped
+`docker-compose.yml` runs a `docker-proxy` sidecar
+(`tecnativa/docker-socket-proxy`) that whitelists only
+`GET /containers/*` and POST on the same paths. Everything else —
+`exec`, `build`, `pull`, `volume create`, `secrets`, `networks`,
+swarm — is blocked. So even if gamedash is compromised, an attacker
+can't pivot to full root-on-host through the socket.
 
-```bash
-echo "DOCKER_GID=$(getent group docker | cut -d: -f3)" >> .env
-docker compose up -d
-```
+The dashboard reaches the proxy via `DOCKER_HOST=tcp://docker-proxy:2375`
+(set in `docker-compose.yml` — you don't need to touch `.env`).
 
-If you skip this you get `permission denied while trying to connect to
-the docker API at unix:///var/run/docker.sock` on every start/stop.
-
-### 2. Game server data directories
+### Game server data directories
 
 The host directory you bind-mount to `/mc-data` (or whatever your
 `dataDir` is) must be writable by uid 1000 — that's where gamedash

@@ -1,10 +1,12 @@
-# gamedash — dashboard + UFW sidecar.
+# gamedash — dashboard + UFW sidecar + docker-socket-proxy.
 #
 # Game servers (Minecraft, Terraria, etc.) are managed separately —
 # they can live in their own compose stacks or be started any other
-# way. Gamedash reaches them via `docker exec <container>`, so all
-# that matters is that the container name in services.json matches a
-# running container on the same Docker host.
+# way. Gamedash reaches them by calling `docker start|stop|inspect`
+# against the host daemon, via a tightly-scoped socket proxy
+# (see the `docker-proxy` service below). All that matters is that
+# the container name in services.json matches a running container on
+# the same Docker host.
 #
 # See README.md for the services.json schema and Caddy reverse-proxy
 # examples.
@@ -36,6 +38,12 @@ services:
       # UFW sidecar: the dashboard calls this URL for firewall operations.
       UFW_SIDECAR_URL: "http://ufw-sidecar:9090"
 
+      # Point the docker CLI at the scoped proxy instead of the real
+      # socket. The proxy whitelists only the four endpoints gamedash
+      # actually uses (start / stop / inspect / logs) — see the
+      # docker-proxy service below.
+      DOCKER_HOST: "tcp://docker-proxy:2375"
+
       # UI defaults
       DEFAULT_SERVICE_ID: "${DEFAULT_SERVICE_ID:-mc1}"
       DEFAULT_LOCALE: "${DEFAULT_LOCALE:-en}"
@@ -45,22 +53,12 @@ services:
       KNOCK_REQUIRE_PASSKEY: "${KNOCK_REQUIRE_PASSKEY:-false}"
     volumes:
       - ./data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
       # Mount game server data dirs for backup / world-switching / logs.
       # The paths below must match the dataDir values in services.json.
       # Make sure the host path is writable by uid 1000 (the `node` user
       # inside the gamedash image) — see the "Permissions" section in
       # README.md for the one-liner chown.
       # - /path/to/mc-server/data:/mc-data
-    # The container runs as `node` (uid 1000) and needs to reach the host
-    # docker daemon via the socket above. Bind-mounting the socket alone
-    # is not enough — the socket is owned by root:docker, so we must add
-    # uid 1000 to the host's docker group by its GID. On Debian/Ubuntu
-    # that is usually 999; discover yours with:
-    #     getent group docker | cut -d: -f3
-    # and set DOCKER_GID=<that number> in .env.
-    group_add:
-      - "${DOCKER_GID:-999}"
     networks:
       - default
       # Join the Minecraft server's network so RCON can reach it by
@@ -68,6 +66,48 @@ services:
       # - mcnet
     depends_on:
       - ufw-sidecar
+      - docker-proxy
+
+  docker-proxy:
+    # Scoped Docker-socket proxy. Exposes only a whitelist of the
+    # Docker API to the dashboard container so a compromise of
+    # gamedash can't pivot to full root-on-host via docker.sock.
+    #
+    # What's enabled:
+    #   CONTAINERS=1  →  GET /containers/*         (inspect, status)
+    #   POST=1        →  start / stop / restart    (only on enabled paths)
+    #
+    # Everything else — exec, build, pull, volume create, secrets,
+    # images, networks, system info, swarm — is blocked by default.
+    # In particular EXEC stays 0: gamedash never shells into other
+    # containers, and disabling it closes the biggest escape hatch.
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: gamedash-docker-proxy
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      # Explicit zeros are defensive — the defaults already block
+      # these, but listing them makes the security boundary obvious
+      # to anyone reading the compose file.
+      EXEC: 0
+      BUILD: 0
+      IMAGES: 0
+      VOLUMES: 0
+      NETWORKS: 0
+      SERVICES: 0
+      SECRETS: 0
+      CONFIGS: 0
+      PLUGINS: 0
+      SYSTEM: 0
+      INFO: 0
+      AUTH: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # No ports published to the host — only reachable on the internal
+    # compose network by the dashboard.
+    networks:
+      - default
 
   ufw-sidecar:
     image: ghcr.io/palchrb/gamedash/ufw-sidecar:latest
