@@ -8,7 +8,6 @@
 
 import { Router } from "express";
 import { config } from "../config";
-import { isRconCommandAllowed } from "../lib/rcon-whitelist";
 import { asyncH } from "../middleware/async-handler";
 import { HttpError } from "../middleware/error-handler";
 import { PlayerBodySchema } from "../schemas";
@@ -91,9 +90,11 @@ export function servicesRouter(): Router {
       requireCapability(svc, "rcon");
       const cmd = decodeURIComponent(req.params["cmd"] ?? "");
       if (!cmd) throw new HttpError(400, "empty command");
-      if (!isRconCommandAllowed(cmd)) {
-        throw new HttpError(400, "command not in allowlist");
-      }
+      // This route is gated by requireAdmin (passkey session) and the
+      // target RCON port is not published to the host — only reachable
+      // over the internal docker network. Authenticated admins already
+      // have full lifecycle control, so we deliberately don't second-
+      // guess the command text here.
       res.json({ success: true, response: await svc.rconSend!(cmd) });
     }),
   );
