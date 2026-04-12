@@ -281,37 +281,20 @@ export class MinecraftAdapter extends BaseAdapter {
     if (!fs.existsSync(backupPath)) {
       throw new Error("Backup folder not found");
     }
-    try {
-      if (this.rcon.isConnected()) {
-        await this.rcon.send("say Restoring backup... server restarting!");
-        await this.rcon.send("stop");
+    this.stopAndApply(async () => {
+      fs.rmSync(this.activeWorldDir, { recursive: true, force: true });
+      fsExtra.copySync(backupPath, this.activeWorldDir);
+      try {
+        fs.rmSync(path.join(this.activeWorldDir, "session.lock"), { force: true });
+      } catch {
+        // ignore
       }
-    } catch {
-      // ignore
-    }
-    // Defer the actual restore so the MC process has time to shut down.
-    setTimeout(() => {
-      this.applyRestore(backupPath, name).catch((err: Error) => {
-        logger().error({ err: err.message, id: this.id }, "restore failed");
-      });
-    }, 15_000);
+      await this.fixOwnership(this.activeWorldDir);
+      this.restoreBluemapData(backupPath);
+      const worldName = name.replace(/-\d{4}-\d{2}-\d{2}T.*$/u, "");
+      if (worldName) fs.writeFileSync(this.currentWorldFile, worldName);
+    }, "restore failed");
     return { restoring: name };
-  }
-
-  private async applyRestore(backupPath: string, name: string): Promise<void> {
-    fs.rmSync(this.activeWorldDir, { recursive: true, force: true });
-    fsExtra.copySync(backupPath, this.activeWorldDir);
-    try {
-      fs.rmSync(path.join(this.activeWorldDir, "session.lock"), { force: true });
-    } catch {
-      // ignore
-    }
-    await this.fixOwnership(this.activeWorldDir);
-    // Restore BlueMap tiles if the backup has them
-    this.restoreBluemapData(backupPath);
-    const worldName = name.replace(/-\d{4}-\d{2}-\d{2}T.*$/u, "");
-    if (worldName) fs.writeFileSync(this.currentWorldFile, worldName);
-    await this.dockerAction("start");
   }
 
   listWorlds(): WorldsInfo {
@@ -353,45 +336,25 @@ export class MinecraftAdapter extends BaseAdapter {
     const oldWorldName = fs.existsSync(this.currentWorldFile)
       ? fs.readFileSync(this.currentWorldFile, "utf8").trim()
       : null;
-    try {
-      if (this.rcon.isConnected()) {
-        await this.rcon.send("say Switching world... server restarting!");
-        await this.rcon.send("stop");
+    this.stopAndApply(async () => {
+      // Save old world + its BlueMap tiles
+      if (oldWorldName && fs.existsSync(this.activeWorldDir)) {
+        const oldSave = path.join(this.worldsDir, oldWorldName);
+        fsExtra.copySync(this.activeWorldDir, oldSave);
+        this.saveBluemapData(oldSave);
       }
-    } catch {
-      // ignore
-    }
-    setTimeout(() => {
-      this.applyWorldSwitch(newWorldPath, oldWorldName, name).catch((err: Error) => {
-        logger().error({ err: err.message, id: this.id }, "world switch failed");
-      });
-    }, 15_000);
+      fs.rmSync(this.activeWorldDir, { recursive: true, force: true });
+      fsExtra.copySync(newWorldPath, this.activeWorldDir);
+      try {
+        fs.rmSync(path.join(this.activeWorldDir, "session.lock"), { force: true });
+      } catch {
+        // ignore
+      }
+      await this.fixOwnership(this.activeWorldDir);
+      this.restoreBluemapData(newWorldPath);
+      fs.writeFileSync(this.currentWorldFile, name);
+    }, "world switch failed");
     return { switching: name };
-  }
-
-  private async applyWorldSwitch(
-    newWorldPath: string,
-    oldWorldName: string | null,
-    name: string,
-  ): Promise<void> {
-    // Save old world + its BlueMap tiles
-    if (oldWorldName && fs.existsSync(this.activeWorldDir)) {
-      const oldSave = path.join(this.worldsDir, oldWorldName);
-      fsExtra.copySync(this.activeWorldDir, oldSave);
-      this.saveBluemapData(oldSave);
-    }
-    fs.rmSync(this.activeWorldDir, { recursive: true, force: true });
-    fsExtra.copySync(newWorldPath, this.activeWorldDir);
-    try {
-      fs.rmSync(path.join(this.activeWorldDir, "session.lock"), { force: true });
-    } catch {
-      // ignore
-    }
-    await this.fixOwnership(this.activeWorldDir);
-    // Restore BlueMap tiles for the new world (if previously saved)
-    this.restoreBluemapData(newWorldPath);
-    fs.writeFileSync(this.currentWorldFile, name);
-    await this.dockerAction("start");
   }
 
   async newWorld(name: string): Promise<{ creating: string }> {
@@ -399,32 +362,70 @@ export class MinecraftAdapter extends BaseAdapter {
     const oldWorldName = fs.existsSync(this.currentWorldFile)
       ? fs.readFileSync(this.currentWorldFile, "utf8").trim()
       : null;
-    try {
-      if (this.rcon.isConnected()) {
-        await this.rcon.send("say Generating new world... server restarting!");
-        await this.rcon.send("stop");
+    this.stopAndApply(async () => {
+      // Save old world + its BlueMap tiles before wiping
+      if (oldWorldName && fs.existsSync(this.activeWorldDir)) {
+        const oldSave = path.join(this.worldsDir, oldWorldName);
+        fsExtra.copySync(this.activeWorldDir, oldSave);
+        this.saveBluemapData(oldSave);
       }
-    } catch {
-      // ignore
-    }
-    setTimeout(() => {
-      this.applyNewWorld(oldWorldName, name).catch((err: Error) => {
-        logger().error({ err: err.message, id: this.id }, "new world failed");
-      });
-    }, 15_000);
+      fs.rmSync(this.activeWorldDir, { recursive: true, force: true });
+      fs.writeFileSync(this.currentWorldFile, name);
+    }, "new world failed");
     return { creating: name };
   }
 
-  private async applyNewWorld(oldWorldName: string | null, name: string): Promise<void> {
-    // Save old world + its BlueMap tiles before wiping
-    if (oldWorldName && fs.existsSync(this.activeWorldDir)) {
-      const oldSave = path.join(this.worldsDir, oldWorldName);
-      fsExtra.copySync(this.activeWorldDir, oldSave);
-      this.saveBluemapData(oldSave);
-    }
-    fs.rmSync(this.activeWorldDir, { recursive: true, force: true });
-    fs.writeFileSync(this.currentWorldFile, name);
-    await this.dockerAction("start");
+  // ── Graceful stop → apply → start ──────────────────────────────────
+
+  /**
+   * Gracefully stop the server, run an async operation on the world
+   * files, then start the server again. This replaces the old pattern
+   * of RCON stop + blind 15s setTimeout which raced against Docker's
+   * restart policy — the container would come back up before we swapped
+   * files, corrupting player data.
+   *
+   * Sequence:
+   *   1. RCON `stop` → MC process saves all data and exits
+   *   2. `docker stop` → prevents restart-policy from reviving it
+   *   3. Run the supplied callback (swap files, etc.)
+   *   4. `docker start` → brings the server back with the new files
+   *
+   * Fires and forgets — returns immediately so the HTTP handler can
+   * respond while the operation runs in the background.
+   */
+  private stopAndApply(
+    fn: () => Promise<void>,
+    errorLabel: string,
+  ): void {
+    const run = async (): Promise<void> => {
+      // 1. Ask MC to save and exit gracefully
+      try {
+        if (this.rcon.isConnected()) {
+          await this.rcon.send("say Server restarting...");
+          await this.rcon.send("save-all flush");
+          await this.rcon.send("stop");
+        }
+      } catch {
+        // RCON may already be gone — that's fine
+      }
+
+      // 2. Stop the container so restart-policy can't revive it
+      try {
+        await this.dockerAction("stop");
+      } catch {
+        // Container may already be stopped
+      }
+
+      // 3. Apply the file operation
+      await fn();
+
+      // 4. Start the server with the new files
+      await this.dockerAction("start");
+    };
+
+    run().catch((err: Error) => {
+      logger().error({ err: err.message, id: this.id }, errorLabel);
+    });
   }
 
   // ── BlueMap tile management ──────────────────────────────────────────
