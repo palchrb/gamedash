@@ -1,19 +1,22 @@
 <!--
-  Gamedash favicon — pixel "G" on transparent background.
-  Thick 2px strokes for a solid look at small sizes.
+  Gamedash favicon — solid pixel "G" on transparent background.
+  2px thick strokes for readability at small sizes.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
   <g fill="#4ade80">
     <!-- Top bar -->
-    <rect x="5" y="3" width="7" height="2"/>
-    <!-- Left side -->
-    <rect x="3" y="5" width="2" height="6"/>
+    <rect x="5" y="3" width="6" height="2"/>
+    <!-- Top-right corner -->
+    <rect x="11" y="3" width="2" height="2"/>
+    <!-- Left side full height -->
+    <rect x="3" y="3" width="2" height="10"/>
     <!-- Bottom bar -->
-    <rect x="5" y="11" width="7" height="2"/>
-    <!-- Top-right hook -->
-    <rect x="10" y="5" width="2" height="2"/>
-    <!-- Middle bar + right arm -->
-    <rect x="8" y="7" width="4" height="2"/>
-    <rect x="10" y="9" width="2" height="2"/>
+    <rect x="5" y="11" width="6" height="2"/>
+    <!-- Bottom-right corner -->
+    <rect x="11" y="11" width="2" height="2"/>
+    <!-- Right arm (below middle bar) -->
+    <rect x="11" y="7" width="2" height="4"/>
+    <!-- Middle bar -->
+    <rect x="8" y="7" width="3" height="2"/>
   </g>
 </svg>
