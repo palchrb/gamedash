@@ -190,29 +190,28 @@
 
     </div>
 
-    <!-- ── Players tab ─────────────────────────────────────────────── -->
+    <!-- ── Players tab (admin's own knock / play view) ─────────────── -->
     <div id="tab-players" class="tab-content">
 
-      <!-- Player overview: shows each player's status, IP, services -->
-      <section class="card">
-        <h2 data-i18n="players.title">Players</h2>
-        <p class="card-desc" data-i18n="players.desc">
-          Overview of all players — their access status, active sessions, and knock links.
-        </p>
-        <div class="btn-group" style="margin-bottom:12px">
-          <button onclick="loadPlayerOverview()" class="btn btn-sm" data-i18n="common.refresh">Refresh</button>
-        </div>
-        <ul id="player-overview-list" class="player-overview-list"></ul>
+      <!-- Hero: Allow My IP button + status -->
+      <section class="card" id="play-hero">
+        <button id="play-knock-btn" class="big-btn" onclick="playKnock()">Allow My IP</button>
+        <p id="play-status" class="meta"></p>
       </section>
 
-      <!-- Add player (quick-add, same as in management tab) -->
+      <!-- Services: connect info, map links -->
+      <div id="play-map-links"></div>
+      <section class="card" id="play-services-card" hidden>
+        <h2 data-i18n="card.services">Services</h2>
+        <ul id="play-services-list" class="play-services-list"></ul>
+      </section>
+
+      <!-- Who is playing now -->
       <section class="card">
-        <h2 data-i18n="btn.add_user">Add player</h2>
-        <div class="input-group">
-          <input type="text" id="player-tab-name" placeholder="Player name (e.g. Lars)">
-          <button onclick="addPlayerFromTab()" class="btn btn-green" data-i18n="btn.add_user">Add player</button>
-        </div>
-        <div id="player-tab-service-checkboxes" class="service-checkboxes"></div>
+        <h2 data-i18n="card.active_sessions">Who is playing now</h2>
+        <ul id="play-active-list" class="play-active-list">
+          <li class="muted" data-i18n="common.loading">Loading…</li>
+        </ul>
       </section>
 
     </div>
@@ -220,16 +219,15 @@
     <!-- ── Management tab ────────────────────────────────────────────── -->
     <div id="tab-management" class="tab-content">
 
-      <!-- Users (per-player knock links) -->
+      <!-- Add new player -->
       <section class="card">
-        <h2 data-i18n="card.users">Users</h2>
-        <p class="card-desc" data-i18n="users.no_users">Add users below to generate personal knock links.</p>
+        <h2 data-i18n="btn.add_user">Add player</h2>
+        <p class="card-desc" data-i18n="users.no_users">Add players to generate personal knock links.</p>
         <div class="input-group">
           <input type="text" id="user-name" placeholder="Player name (e.g. Lars)">
-          <button onclick="addUser()" class="btn btn-green" data-i18n="btn.add_user">Add user</button>
+          <button onclick="addUser()" class="btn btn-green" data-i18n="btn.add_user">Add player</button>
         </div>
         <div id="user-service-checkboxes" class="service-checkboxes"></div>
-        <ul id="user-list" class="user-list"></ul>
       </section>
 
       <!-- Directory: aggregated view of admins + knock users -->

@@ -32,13 +32,20 @@ export function servicesRouter(): Router {
   const router = Router();
 
   router.get("/api/services", (_req, res) => {
-    // Enrich each descriptor with the admin-context mapUrl so the
-    // dashboard can surface a link to the proxied or external map
-    // without knowing anything about the mapProxy config.
+    // Enrich each descriptor with connect info and map URLs so the
+    // dashboard can surface links, connect helpers, and the Players
+    // tab without knowing anything about the underlying config.
     const enriched = registry().list().map((d) => {
       const svc = registry().get(d.id);
-      const mapUrl = svc ? resolveMapUrl(svc, { kind: "admin" }) : undefined;
-      return mapUrl ? { ...d, mapUrl } : d;
+      if (!svc) return d;
+      const mapUrl = resolveMapUrl(svc, { kind: "admin" });
+      return {
+        ...d,
+        ...(mapUrl ? { mapUrl } : {}),
+        ...(svc.connectAddress ? { connectAddress: svc.connectAddress } : {}),
+        ...(svc.connectGuideUrl ? { connectGuideUrl: svc.connectGuideUrl } : {}),
+        ...(svc.connectHelper ? { connectHelper: svc.connectHelper } : {}),
+      };
     });
     res.json({
       success: true,

@@ -754,34 +754,9 @@ function serviceNameById(id) {
   return s ? s.name : id;
 }
 
-async function loadUsers() {
-  const data = await api("/admin/api/users");
-  const list = document.getElementById("user-list");
-  if (!list) return;
-  if (!data || !data.users || data.users.length === 0) {
-    list.innerHTML = `<li class="muted">${t("users.no_users")}</li>`;
-    return;
-  }
-  list.innerHTML = data.users
-    .map((u) => {
-      const svcNames = (u.allowedServices || [])
-        .map(serviceNameById).join(", ") || "—";
-      const creds = u.hasCredentials
-        ? `<span class="badge badge-ok" style="font-size:0.7rem">${(u.credentials || []).length} 🔑</span>`
-        : "";
-      return `<li class="user-item">
-        <div>
-          <strong>${escapeHtml(u.name)}</strong> ${creds}
-          <div class="muted">${escapeHtml(svcNames)}</div>
-        </div>
-        <div class="user-actions">
-          <button class="btn btn-sm" onclick="rotateUserToken('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("btn.new_link")}</button>
-          <button class="btn btn-sm btn-red" onclick="deleteUser('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("common.delete")}</button>
-        </div>
-      </li>`;
-    })
-    .join("");
-}
+// User list was moved into the Directory card. This function is kept as
+// a no-op so existing callers (tab switch, add/delete) don't break.
+async function loadUsers() {}
 
 async function addUser() {
   const input = document.getElementById("user-name");
@@ -799,7 +774,6 @@ async function addUser() {
     const url = `${window.location.origin}/u/${data.token}`;
     try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
     prompt(t("users.copy_link_done"), url);
-    loadUsers();
     loadDirectory();
   } else if (data) {
     toast(data.error || "Failed", "error");
@@ -821,7 +795,7 @@ async function deleteUser(id, name) {
   const data = await api(`/admin/api/users/${id}`, { method: "DELETE" });
   if (data && data.success) {
     toast(t("users.deleted", { name }), "success");
-    loadUsers();
+    loadDirectory();
   }
 }
 
@@ -900,15 +874,17 @@ async function loadDirectory() {
           ? escapeHtml(names.join(", "))
           : `<span class="muted">${t("directory.edit_services_none")}</span>`;
       }
-      // Actions column for knock users: edit services, revoke IP, suspend/reinstate.
+      // Actions column for knock users: edit services, new link, revoke, suspend, delete.
       let actionsCell = `<span class="muted">—</span>`;
       if (e.kind === "knock") {
         const editBtn = `<button class="btn btn-sm" onclick="openEditServicesModal('${escapeAttr(e.id)}')">${t("directory.edit_services")}</button>`;
+        const linkBtn = `<button class="btn btn-sm" onclick="rotateUserToken('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("btn.new_link")}</button>`;
         const revokeBtn = `<button class="btn btn-sm btn-red" onclick="revokeUserIp('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("btn.revoke")}</button>`;
         const suspendBtn = e.suspended
           ? `<button class="btn btn-sm btn-green" onclick="reinstatePlayer('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("btn.reinstate")}</button>`
           : `<button class="btn btn-sm btn-red" onclick="suspendPlayer('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("btn.suspend")}</button>`;
-        actionsCell = `<div class="btn-group-inline">${editBtn}${revokeBtn}${suspendBtn}</div>`;
+        const deleteBtn = `<button class="btn btn-sm btn-red" onclick="deleteUser('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("common.delete")}</button>`;
+        actionsCell = `<div class="btn-group-inline">${editBtn}${linkBtn}${revokeBtn}${suspendBtn}${deleteBtn}</div>`;
       }
       return `<tr>
         <td><strong>${escapeHtml(e.name)}</strong></td>
@@ -1063,134 +1039,174 @@ async function loadStatsLeaderboard() {
     .join("");
 }
 
-// ---- Player tab overview -------------------------------------------------
-async function loadPlayerOverview() {
-  const [sessData, usersData] = await Promise.all([
-    api("/admin/api/active-sessions"),
-    api("/admin/api/users"),
-  ]);
-  const list = document.getElementById("player-overview-list");
-  if (!list) return;
-  const users = (usersData && usersData.users) || [];
-  const sessions = (sessData && sessData.sessions) || [];
-  // Build a session lookup by userId
-  const sessionByUser = {};
-  for (const s of sessions) sessionByUser[s.userId] = s;
+// ---- Players tab (admin's own knock / play view) ------------------------
+let playCountdownTimer = null;
 
-  if (users.length === 0) {
-    list.innerHTML = `<li class="muted">${t("players.no_players")}</li>`;
-    return;
+async function playKnock() {
+  const btn = document.getElementById("play-knock-btn");
+  btn.textContent = "Detecting IP...";
+  btn.disabled = true;
+  const ips = await detectPublicIps();
+  if (ips.length === 0) {
+    btn.disabled = false;
+    btn.textContent = t("btn.allow_my_ip");
+    return toast("Could not detect your public IP", "error");
   }
-
-  list.innerHTML = users.map((u) => {
-    const sess = sessionByUser[u.id];
-    const ips = sess ? (Array.isArray(sess.ips) ? sess.ips : []) : [];
-    const suspended = u.suspended || (sess && sess.suspended);
-    const playing = sess && sess.services && sess.services.find((sv) => sv.connected);
-
-    // Status badge
-    let statusHtml;
-    if (suspended) {
-      statusHtml = `<span class="badge badge-suspended">${t("directory.suspended")}</span>`;
-    } else if (playing) {
-      statusHtml = `<span class="badge badge-playing">${t("players.playing")}</span>`;
-    } else if (ips.length > 0) {
-      statusHtml = `<span class="badge badge-ok">${t("players.ready")}</span>`;
-    } else {
-      statusHtml = `<span class="badge badge-offline">${t("players.not_ready")}</span>`;
-    }
-
-    // Services list with connection indicators
-    let servicesHtml = "";
-    if (sess && sess.services) {
-      servicesHtml = sess.services.map((sv) => {
-        const dot = sv.connected ? "🟢" : "⚪";
-        return `<span class="player-service">${dot} ${escapeHtml(sv.name)}</span>`;
-      }).join(" ");
-    } else {
-      const names = (u.allowedServices || []).map(serviceNameById);
-      servicesHtml = names.map((n) => `<span class="player-service">⚪ ${escapeHtml(n)}</span>`).join(" ");
-    }
-
-    // IP + expiry info
-    let ipInfo = "";
-    if (ips.length > 0) {
-      ipInfo = escapeHtml(ips.join(", "));
-      if (sess && sess.ipExpiresAt) {
-        const remaining = new Date(sess.ipExpiresAt).getTime() - Date.now();
-        if (remaining > 0) {
-          const hrs = Math.floor(remaining / 3600000);
-          const mins = Math.floor((remaining % 3600000) / 60000);
-          ipInfo += ` · ${t("firewall.expires_in", { hours: hrs, minutes: mins })}`;
-        }
-      }
-    }
-
-    // Action buttons
-    const revokeBtn = ips.length > 0
-      ? `<button class="btn btn-sm btn-red" onclick="revokeUserIp('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("btn.revoke")}</button>`
-      : "";
-    const suspendBtn = suspended
-      ? `<button class="btn btn-sm btn-green" onclick="reinstatePlayer('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("btn.reinstate")}</button>`
-      : `<button class="btn btn-sm btn-red" onclick="suspendPlayer('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("btn.suspend")}</button>`;
-    const linkBtn = `<button class="btn btn-sm" onclick="rotateUserToken('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("btn.new_link")}</button>`;
-
-    return `<li class="player-overview-item">
-      <div class="player-overview-header">
-        <strong>${escapeHtml(u.name)}</strong>
-        ${statusHtml}
-      </div>
-      <div class="player-overview-services">${servicesHtml}</div>
-      ${ipInfo ? `<div class="player-overview-ip muted">${ipInfo}</div>` : ""}
-      <div class="player-overview-actions btn-group-inline">${revokeBtn}${suspendBtn}${linkBtn}</div>
-    </li>`;
-  }).join("");
-
-  // Also render the service checkboxes in the player tab add-player form
-  renderPlayerTabCheckboxes();
-}
-
-function renderPlayerTabCheckboxes() {
-  const wrap = document.getElementById("player-tab-service-checkboxes");
-  if (!wrap || SERVICES.length < 2) { if (wrap) wrap.innerHTML = ""; return; }
-  wrap.innerHTML = `<span class="checkbox-label">${t("users.allowed_services")}:</span> ` +
-    SERVICES.map((s) =>
-      `<label class="service-cb">
-        <input type="checkbox" value="${escapeAttr(s.id)}" checked> ${escapeHtml(s.name)}
-      </label>`
-    ).join(" ");
-}
-
-function getPlayerTabSelectedServices() {
-  const boxes = document.querySelectorAll("#player-tab-service-checkboxes input[type=checkbox]");
-  if (boxes.length === 0) return SERVICES.map((s) => s.id);
-  const ids = [];
-  for (const cb of boxes) { if (cb.checked) ids.push(cb.value); }
-  return ids;
-}
-
-async function addPlayerFromTab() {
-  const input = document.getElementById("player-tab-name");
-  const name = input.value.trim();
-  if (!name) return toast(t("users.placeholder_name"), "error");
-  const allowedServices = getPlayerTabSelectedServices();
-  if (allowedServices.length === 0) return toast(t("users.no_services_selected"), "error");
-  const data = await api("/admin/api/users", {
+  const data = await api("/admin/api/firewall/add", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, allowedServices }),
+    body: JSON.stringify({ ips, label: "Admin" }),
   });
+  btn.disabled = false;
   if (data && data.success) {
-    input.value = "";
-    const url = `${window.location.origin}/u/${data.token}`;
-    try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
-    prompt(t("users.copy_link_done"), url);
-    loadPlayerOverview();
-    loadUsers();
-    loadDirectory();
-  } else if (data) {
-    toast(data.error || "Failed", "error");
+    toast(t("knock.success"), "success");
+    refreshPlayTab();
+  } else {
+    btn.textContent = t("btn.allow_my_ip");
+    if (data) toast(data.error || "Failed", "error");
   }
+}
+
+async function refreshPlayTab() {
+  // Fetch firewall rules to find admin's own IP rule + active sessions
+  const [fwData, sessData] = await Promise.all([
+    api("/admin/api/firewall"),
+    api("/admin/api/active-sessions"),
+  ]);
+
+  // --- Hero: admin's IP status ---
+  const btn = document.getElementById("play-knock-btn");
+  const statusEl = document.getElementById("play-status");
+  // Find an admin-owned rule (no userId, or label contains "Admin" / "My IP")
+  let myRule = null;
+  if (fwData && fwData.rules) {
+    // Admin rules have no userId (they're manual rules, not knock rules)
+    myRule = fwData.rules.find((r) => !r.userId);
+  }
+  if (myRule) {
+    btn.textContent = t("knock.ready");
+    btn.classList.add("big-btn-ok");
+    if (myRule.expiresAt) {
+      const remain = new Date(myRule.expiresAt).getTime() - Date.now();
+      if (remain > 0) {
+        const update = () => {
+          const rem = new Date(myRule.expiresAt).getTime() - Date.now();
+          if (rem <= 0) {
+            statusEl.textContent = "";
+            btn.textContent = t("btn.allow_my_ip");
+            btn.classList.remove("big-btn-ok");
+            clearInterval(playCountdownTimer);
+            return;
+          }
+          const h = Math.floor(rem / 3600000);
+          const m = Math.floor((rem % 3600000) / 60000);
+          statusEl.textContent = t("knock.expires_in", { hours: h, minutes: m });
+        };
+        update();
+        clearInterval(playCountdownTimer);
+        playCountdownTimer = setInterval(update, 30000);
+      } else {
+        statusEl.textContent = "";
+      }
+    } else {
+      statusEl.textContent = "";
+    }
+  } else {
+    btn.textContent = t("btn.allow_my_ip");
+    btn.classList.remove("big-btn-ok");
+    statusEl.textContent = t("knock.never");
+    clearInterval(playCountdownTimer);
+  }
+
+  // --- Service connect info + map links ---
+  const mapLinksEl = document.getElementById("play-map-links");
+  const svcCard = document.getElementById("play-services-card");
+  const svcList = document.getElementById("play-services-list");
+
+  function connectInfoHtml(s) {
+    if (s.connectAddress) {
+      return `<span class="connect-addr" data-copy="${escapeAttr(s.connectAddress)}" title="${t("service.click_to_copy")}">${escapeHtml(s.connectAddress)}</span>`;
+    }
+    if (s.ports && s.ports.length > 0) {
+      const portStr = s.ports.map((p) => `${p.port}/${p.proto}`).join(", ");
+      return `<span class="muted">${escapeHtml(portStr)}</span>`;
+    }
+    return "";
+  }
+
+  if (SERVICES.length === 1) {
+    const s = SERVICES[0];
+    const parts = [];
+    parts.push(connectInfoHtml(s));
+    if (s.mapUrl) {
+      parts.push(`<a class="play-map-link" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">${t("btn.view_map")}</a>`);
+    }
+    if (s.connectGuideUrl) {
+      parts.push(`<a class="play-guide-link" href="${escapeAttr(s.connectGuideUrl)}" target="_blank" rel="noopener">${t("btn.setup_guide")}</a>`);
+    }
+    mapLinksEl.innerHTML = parts.filter(Boolean).join("");
+    svcCard.hidden = true;
+  } else if (SERVICES.length > 1) {
+    mapLinksEl.innerHTML = "";
+    svcCard.hidden = false;
+    svcList.innerHTML = SERVICES.map((s) => {
+      const actions = [];
+      if (s.mapUrl) {
+        actions.push(`<a class="play-map-link" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">${t("btn.view_map")}</a>`);
+      }
+      if (s.connectGuideUrl) {
+        actions.push(`<a class="play-guide-link" href="${escapeAttr(s.connectGuideUrl)}" target="_blank" rel="noopener">${t("btn.setup_guide")}</a>`);
+      }
+      return `<li>
+        <div class="play-svc-info"><strong>${escapeHtml(s.name)}</strong> ${connectInfoHtml(s)}</div>
+        ${actions.length ? `<span class="play-svc-actions">${actions.join(" ")}</span>` : ""}
+      </li>`;
+    }).join("");
+  }
+
+  // Wire click-to-copy
+  for (const el of document.querySelectorAll("#tab-players [data-copy]")) {
+    el.onclick = () => {
+      navigator.clipboard.writeText(el.dataset.copy).then(() => {
+        toast(t("service.copied"), "success");
+      }).catch(() => {});
+    };
+  }
+
+  // --- Active sessions ---
+  const activeList = document.getElementById("play-active-list");
+  const sessions = (sessData && sessData.sessions) || [];
+  if (sessions.length === 0) {
+    activeList.innerHTML = `<li class="muted">${t("players.no_players")}</li>`;
+  } else {
+    activeList.innerHTML = sessions.map((s) => {
+      const ips = Array.isArray(s.ips) ? s.ips : [];
+      const playing = s.services.find((sv) => sv.connected);
+      const allowed = ips.length > 0;
+      let dot = "dot-gray", label;
+      if (s.suspended) {
+        dot = "dot-red";
+        label = t("directory.suspended");
+      } else if (playing) {
+        dot = "dot-green";
+        label = t("active.connected", { service: playing.name });
+      } else if (allowed) {
+        dot = "dot-yellow";
+        label = t("active.idle_allowed");
+      } else {
+        label = t("active.idle_unallowed");
+      }
+      return `<li class="play-active-item">
+        <span><span class="play-dot ${dot}"></span><strong>${escapeHtml(s.name)}</strong></span>
+        <span class="muted">${escapeHtml(label)}</span>
+      </li>`;
+    }).join("");
+  }
+}
+
+// Called when switching to the players tab and on interval
+function loadPlayerOverview() {
+  refreshPlayTab();
 }
 
 // ---- Dashboard boot (called after successful login) ---------------------

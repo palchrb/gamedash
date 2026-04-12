@@ -86,7 +86,7 @@
   "firewall.allowed": "Allowed {ip} on all configured ports",
   "firewall.removed": "Removed {ip} from all configured ports",
 
-  "users.no_users": "No users yet. Add one to generate a personal knock link.",
+  "users.no_users": "Add players to generate personal knock links.",
   "users.placeholder_name": "Player name (e.g. Lars)",
   "users.created": "Created user {name}",
   "users.deleted": "Deleted user {name}",
