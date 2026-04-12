@@ -138,6 +138,7 @@ function buildServiceList(user: UserRecord) {
       ports: a.ports,
       ...(mapUrl ? { mapUrl } : {}),
       ...(a.connectAddress ? { connectAddress: a.connectAddress } : {}),
+      ...(a.connectGuideUrl ? { connectGuideUrl: a.connectGuideUrl } : {}),
     };
   });
 }

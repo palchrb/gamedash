@@ -59,6 +59,7 @@
   "btn.knock_all": "Play now",
   "btn.view_map": "View world map",
   "btn.view_map_named": "View {service} map",
+  "btn.setup_guide": "Setup guide",
   "btn.install_app": "Install as app",
 
   "gamemode.survival": "Survival",

@@ -28,6 +28,7 @@ export class BaseAdapter implements ServiceAdapter {
   readonly mapUrl?: string;
   readonly mapProxy?: MapProxyTarget;
   readonly connectAddress?: string;
+  readonly connectGuideUrl?: string;
   readonly capabilities: Set<Capability>;
   protected readonly config: ServiceConfig;
 
@@ -46,6 +47,7 @@ export class BaseAdapter implements ServiceAdapter {
       };
     }
     if (config.connectAddress) this.connectAddress = config.connectAddress;
+    if (config.connectGuideUrl) this.connectGuideUrl = config.connectGuideUrl;
     this.config = config;
     this.capabilities = new Set<Capability>(["lifecycle"]);
   }

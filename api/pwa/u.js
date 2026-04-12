@@ -338,16 +338,27 @@
       if (SERVICES.length > 1) {
         servicesCard.hidden = false;
         servicesList.innerHTML = SERVICES.map(
-          (s) =>
-            `<li><div class="li-info"><span>${escapeHtml(s.name)}</span>` +
-            `<div class="connect-row">${connectInfo(s)}</div></div>` +
-            (s.mapUrl
-              ? `<span class="li-actions">` +
+          (s) => {
+            const actions = [];
+            if (s.mapUrl) {
+              actions.push(
                 `<a class="map-link-inline" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">` +
-                `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ${t("btn.view_map")}</a>` +
-                `</span>`
-              : "") +
-            `</li>`,
+                `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ${t("btn.view_map")}</a>`
+              );
+            }
+            if (s.connectGuideUrl) {
+              actions.push(
+                `<a class="guide-link-inline" href="${escapeAttr(s.connectGuideUrl)}" target="_blank" rel="noopener">` +
+                `${t("btn.setup_guide")}</a>`
+              );
+            }
+            return `<li><div class="li-info"><span>${escapeHtml(s.name)}</span>` +
+              `<div class="connect-row">${connectInfo(s)}</div></div>` +
+              (actions.length > 0
+                ? `<span class="li-actions">${actions.join(" ")}</span>`
+                : "") +
+              `</li>`;
+          },
         ).join("");
       }
 
@@ -362,6 +373,12 @@
           parts.push(
             `<a class="map-link" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">` +
             `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ${escapeHtml(t("btn.view_map"))}</a>`
+          );
+        }
+        if (s.connectGuideUrl) {
+          parts.push(
+            `<a class="guide-link" href="${escapeAttr(s.connectGuideUrl)}" target="_blank" rel="noopener">` +
+            `${escapeHtml(t("btn.setup_guide"))}</a>`
           );
         }
         mapLinksEl.innerHTML = parts.join("");

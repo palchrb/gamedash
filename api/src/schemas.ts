@@ -48,6 +48,7 @@ export const ServiceConfigSchema = z.object({
     })
     .optional(),
   connectAddress: z.string().optional(),
+  connectGuideUrl: z.string().url().optional(),
   backupsDir: z.string().optional(),
   worldsDir: z.string().optional(),
   activeWorldDir: z.string().optional(),

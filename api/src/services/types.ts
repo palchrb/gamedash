@@ -59,6 +59,7 @@ export interface ServiceAdapter {
   readonly mapUrl?: string;
   readonly mapProxy?: MapProxyTarget;
   readonly connectAddress?: string;
+  readonly connectGuideUrl?: string;
   readonly capabilities: Set<Capability>;
 
   hasCapability(cap: Capability): boolean;
