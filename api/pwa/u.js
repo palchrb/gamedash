@@ -359,8 +359,7 @@
             const impHelp = (!IS_MOBILE && impostorParams(s))
               ? `<div class="impostor-help-row">` +
                 `<p>${t("impostor.hint_desktop")}</p>` +
-                `<p class="impostor-path" data-copy="${escapeAttr(t("impostor.path_windows"))}" title="${t("service.click_to_copy")}">${escapeHtml(t("impostor.path_windows"))}</p>` +
-                `<p class="impostor-path" data-copy="${escapeAttr(t("impostor.path_linux"))}" title="${t("service.click_to_copy")}">${escapeHtml(t("impostor.path_linux"))}</p>` +
+                `<p><span class="impostor-path" data-copy="${escapeAttr(t("impostor.path_windows"))}" title="${t("service.click_to_copy")}">${escapeHtml(t("impostor.path_windows"))}</span></p>` +
                 `<p>${t("impostor.hint_desktop_after")}</p>` +
                 `</div>`
               : "";
