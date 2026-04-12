@@ -5,7 +5,6 @@
   text has room without leaving the visible area on round launchers.
 -->
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" shape-rendering="crispEdges">
-  <rect width="24" height="24" fill="#1a1a2e"/>
   <g fill="#4ade80">
     <!-- G: 8x7 glyph centered at x=8..15, y=5..11 -->
     <rect x="9" y="5" width="6" height="1"/>
