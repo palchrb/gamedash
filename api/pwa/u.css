@@ -230,6 +230,18 @@ li:last-child { border-bottom: none; }
 }
 .impostor-btn-inline:active { background: rgba(255,255,255,0.12); }
 .helper-hint { font-size: 12px; margin: 4px 0 0; line-height: 1.4; }
+.helper-hint p { margin: 4px 0; }
+.impostor-path {
+  font-family: monospace;
+  font-size: 11px;
+  background: rgba(255,255,255,0.08);
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: all;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
 .li-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
 .li-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 .connect-row { font-size: 13px; min-width: 0; overflow-wrap: anywhere; }

@@ -65,7 +65,10 @@
   "impostor.download_config": "Download server config",
   "impostor.downloaded": "regionInfo.json downloaded",
   "impostor.hint_mobile": "Adds the server to Among Us. Pick it from the region menu to play.",
-  "impostor.hint_desktop": "Save to your Among Us folder, then pick the server from the region menu.",
+  "impostor.hint_desktop": "Save the file to your Among Us data folder and restart the game:",
+  "impostor.path_windows": "Windows: %APPDATA%\\..\\LocalLow\\Innersloth\\Among Us\\",
+  "impostor.path_linux": "Linux: ~/.steam/steam/steamapps/compatdata/945360/pfx/drive_c/users/steamuser/AppData/LocalLow/Innersloth/Among Us/",
+  "impostor.hint_desktop_after": "Then pick the server from the region menu (bottom right).",
 
   "gamemode.survival": "Survival",
   "gamemode.creative": "Creative",

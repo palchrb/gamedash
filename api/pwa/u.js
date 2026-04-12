@@ -590,7 +590,12 @@
     return `<button class="impostor-btn" data-impostor-dl ` +
       `data-host="${escapeAttr(p.host)}" data-port="${p.port}" ` +
       `data-scheme="${escapeAttr(p.scheme)}" data-name="${escapeAttr(p.name)}">${t("impostor.download_config")}</button>` +
-      `<p class="helper-hint muted">${t("impostor.hint_desktop")}</p>`;
+      `<div class="helper-hint muted">` +
+      `<p>${t("impostor.hint_desktop")}</p>` +
+      `<p class="impostor-path" data-copy="${escapeAttr(t("impostor.path_windows"))}" title="${t("service.click_to_copy")}">${escapeHtml(t("impostor.path_windows"))}</p>` +
+      `<p class="impostor-path" data-copy="${escapeAttr(t("impostor.path_linux"))}" title="${t("service.click_to_copy")}">${escapeHtml(t("impostor.path_linux"))}</p>` +
+      `<p>${t("impostor.hint_desktop_after")}</p>` +
+      `</div>`;
   }
 
   function wireImpostorDownloads() {
