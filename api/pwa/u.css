@@ -184,6 +184,52 @@ li:last-child { border-bottom: none; }
   transition: background 0.15s;
 }
 .map-link-inline:active { background: rgba(255,255,255,0.1); }
+.guide-link, .guide-link-inline {
+  display: inline-block;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.06);
+  border-radius: var(--radius);
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  transition: background 0.15s;
+}
+.guide-link:active, .guide-link-inline:active { background: rgba(255,255,255,0.1); }
+.impostor-btn {
+  display: block;
+  width: 100%;
+  text-align: center;
+  padding: 10px 16px;
+  margin: 8px 0 4px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius);
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-family: inherit;
+}
+.impostor-btn:active { background: rgba(255,255,255,0.12); }
+.impostor-btn-inline {
+  display: inline-block;
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  border-radius: var(--radius);
+  color: var(--fg);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+  font-family: inherit;
+}
+.impostor-btn-inline:active { background: rgba(255,255,255,0.12); }
+.helper-hint { font-size: 12px; margin: 4px 0 0; line-height: 1.4; }
 .li-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
 .li-actions { display: flex; gap: 8px; align-items: center; flex-shrink: 0; }
 .connect-row { font-size: 13px; min-width: 0; overflow-wrap: anywhere; }

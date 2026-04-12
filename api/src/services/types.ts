@@ -59,6 +59,8 @@ export interface ServiceAdapter {
   readonly mapUrl?: string;
   readonly mapProxy?: MapProxyTarget;
   readonly connectAddress?: string;
+  readonly connectGuideUrl?: string;
+  readonly connectHelper?: { type: "impostor"; scheme: "http" | "https"; name?: string };
   readonly capabilities: Set<Capability>;
 
   hasCapability(cap: Capability): boolean;
