@@ -586,40 +586,98 @@ h3 {
   margin-top: 0;
 }
 
-/* Player overview list (Players tab) */
-.player-overview-list {
-  list-style: none;
-  padding: 0;
-  margin: 12px 0 0;
+/* Players tab — knock / play view */
+.big-btn {
+  display: block;
+  width: 100%;
+  padding: 18px;
+  font-size: 1.1rem;
+  font-weight: 700;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  background: #2d6a4f;
+  color: #e0e0e0;
+  transition: background 0.2s, transform 0.1s;
 }
-.player-overview-item {
-  padding: 14px 0;
-  border-bottom: 1px solid rgba(255,255,255,0.06);
+.big-btn:hover { background: #40916c; transform: translateY(-1px); }
+.big-btn:active { transform: translateY(0); }
+.big-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+.big-btn-ok { background: #1a4a7a; }
+.big-btn-ok:hover { background: #2563a8; }
+
+#play-hero .meta {
+  text-align: center;
+  color: #9aa0c0;
+  font-size: 0.85rem;
+  margin-top: 10px;
 }
-.player-overview-item:last-child {
-  border-bottom: none;
-}
-.player-overview-header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 6px;
-}
-.player-overview-services {
+
+#play-map-links {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 4px;
-  font-size: 0.85rem;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 12px;
 }
-.player-service {
-  color: #9aa0c0;
+#play-map-links:empty { display: none; }
+.play-map-link, .play-guide-link {
+  color: #4ecca3;
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 600;
 }
-.player-overview-ip {
+.play-map-link:hover, .play-guide-link:hover { text-decoration: underline; }
+
+.connect-addr {
   font-family: "Fira Code", "Cascadia Code", monospace;
-  font-size: 0.78rem;
-  margin-bottom: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  color: #e0e0e0;
 }
-.player-overview-actions {
-  margin-top: 8px;
+.connect-addr:hover { color: #4ecca3; }
+
+.play-services-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
 }
+.play-services-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.9rem;
+}
+.play-services-list li:last-child { border-bottom: none; }
+.play-svc-info { display: flex; align-items: center; gap: 10px; }
+.play-svc-actions { display: flex; gap: 10px; }
+
+.play-active-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+.play-active-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+  font-size: 0.88rem;
+}
+.play-active-item:last-child { border-bottom: none; }
+
+.play-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 8px;
+}
+.dot-green { background: #4ecca3; }
+.dot-yellow { background: #ffd166; }
+.dot-gray { background: #555; }
+.dot-red { background: #e57373; }
