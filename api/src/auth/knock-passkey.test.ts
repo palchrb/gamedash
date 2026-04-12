@@ -19,6 +19,7 @@ function fakeUser(overrides: Partial<UserRecord> = {}): UserRecord {
     history: [],
     credentials: [],
     registrationOpenUntil: null,
+    suspended: false,
     ...overrides,
   };
 }

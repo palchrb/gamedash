@@ -175,11 +175,13 @@ function initTabs() {
       activeTab = tab;
       // Refresh management data when switching to that tab
       if (tab === "management") {
-        loadFirewallRules();
         loadUsers();
         loadDirectory();
         loadActiveSessions();
         loadStatsLeaderboard();
+      }
+      if (tab === "players") {
+        loadPlayerOverview();
       }
     });
   }
@@ -350,10 +352,14 @@ function poll() {
       if (caps.includes("worlds")) loadWorlds();
       if (caps.includes("backup")) listBackups();
     }
+  } else if (activeTab === "players") {
+    pollCount++;
+    if (pollCount % 3 === 0) {
+      loadPlayerOverview();
+    }
   } else {
     pollCount++;
     if (pollCount % 3 === 0) {
-      loadFirewallRules();
       loadActiveSessions();
     }
   }
@@ -382,8 +388,9 @@ document.addEventListener("visibilitychange", () => {
       const caps = SERVICE_MAP[CURRENT_SERVICE]?.capabilities || [];
       if (caps.includes("worlds")) loadWorlds();
       if (caps.includes("backup")) listBackups();
+    } else if (activeTab === "players") {
+      loadPlayerOverview();
     } else {
-      loadFirewallRules();
       loadActiveSessions();
     }
     startPolling();
@@ -741,7 +748,7 @@ async function loadLogs() {
   }
 }
 
-// --- Users (per-child knock links) ---------------------------------------
+// --- Users (per-player knock links) ---------------------------------------
 function serviceNameById(id) {
   const s = SERVICES.find((x) => x.id === id);
   return s ? s.name : id;
@@ -853,6 +860,9 @@ function directoryStatusCell(entry) {
     return `<span class="badge badge-ok">${t("directory.active")}</span>`;
   }
   // knock user
+  if (entry.suspended) {
+    return `<span class="badge badge-suspended">${t("directory.suspended")}</span>`;
+  }
   if (entry.registrationOpenUntil) {
     return `<span class="badge badge-warn">${t("directory.enroll_open")}</span>`;
   }
@@ -879,7 +889,7 @@ async function loadDirectory() {
   body.innerHTML = data.entries
     .map((e) => {
       const roleLabel =
-        e.role === "admin" ? t("directory.role_admin") : t("directory.role_child");
+        e.role === "admin" ? t("directory.role_admin") : t("directory.role_player");
       const devices = (e.credentials || []).length;
       // Services column: only meaningful for knock users; admins have
       // access to everything through /admin, so render a dash instead.
@@ -890,11 +900,16 @@ async function loadDirectory() {
           ? escapeHtml(names.join(", "))
           : `<span class="muted">${t("directory.edit_services_none")}</span>`;
       }
-      // Actions column: edit-services button for knock users only.
-      const actionsCell =
-        e.kind === "knock"
-          ? `<button class="btn btn-sm" onclick="openEditServicesModal('${escapeAttr(e.id)}')">${t("directory.edit_services")}</button>`
-          : `<span class="muted">—</span>`;
+      // Actions column for knock users: edit services, revoke IP, suspend/reinstate.
+      let actionsCell = `<span class="muted">—</span>`;
+      if (e.kind === "knock") {
+        const editBtn = `<button class="btn btn-sm" onclick="openEditServicesModal('${escapeAttr(e.id)}')">${t("directory.edit_services")}</button>`;
+        const revokeBtn = `<button class="btn btn-sm btn-red" onclick="revokeUserIp('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("btn.revoke")}</button>`;
+        const suspendBtn = e.suspended
+          ? `<button class="btn btn-sm btn-green" onclick="reinstatePlayer('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("btn.reinstate")}</button>`
+          : `<button class="btn btn-sm btn-red" onclick="suspendPlayer('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("btn.suspend")}</button>`;
+        actionsCell = `<div class="btn-group-inline">${editBtn}${revokeBtn}${suspendBtn}</div>`;
+      }
       return `<tr>
         <td><strong>${escapeHtml(e.name)}</strong></td>
         <td>${escapeHtml(roleLabel)}</td>
@@ -906,6 +921,37 @@ async function loadDirectory() {
       </tr>`;
     })
     .join("");
+}
+
+// ---- Directory actions: revoke IP, suspend, reinstate --------------------
+async function revokeUserIp(userId, name) {
+  if (!confirm(t("users.revoke_confirm", { name }))) return;
+  const data = await api(`/admin/api/users/${userId}/revoke`, { method: "POST" });
+  if (data && data.success) {
+    toast(t("users.revoked", { name }), "success");
+    loadDirectory();
+    loadUsers();
+  }
+}
+
+async function suspendPlayer(userId, name) {
+  if (!confirm(t("directory.suspend_confirm", { name }))) return;
+  const data = await api(`/admin/api/users/${userId}/suspend`, { method: "POST" });
+  if (data && data.success) {
+    toast(t("directory.suspended_done", { name }), "success");
+    loadDirectory();
+    loadUsers();
+  }
+}
+
+async function reinstatePlayer(userId, name) {
+  if (!confirm(t("directory.reinstate_confirm", { name }))) return;
+  const data = await api(`/admin/api/users/${userId}/reinstate`, { method: "POST" });
+  if (data && data.success) {
+    toast(t("directory.reinstated_done", { name }), "success");
+    loadDirectory();
+    loadUsers();
+  }
 }
 
 // ---- Edit services modal -------------------------------------------------
@@ -1015,6 +1061,136 @@ async function loadStatsLeaderboard() {
       </li>`;
     })
     .join("");
+}
+
+// ---- Player tab overview -------------------------------------------------
+async function loadPlayerOverview() {
+  const [sessData, usersData] = await Promise.all([
+    api("/admin/api/active-sessions"),
+    api("/admin/api/users"),
+  ]);
+  const list = document.getElementById("player-overview-list");
+  if (!list) return;
+  const users = (usersData && usersData.users) || [];
+  const sessions = (sessData && sessData.sessions) || [];
+  // Build a session lookup by userId
+  const sessionByUser = {};
+  for (const s of sessions) sessionByUser[s.userId] = s;
+
+  if (users.length === 0) {
+    list.innerHTML = `<li class="muted">${t("players.no_players")}</li>`;
+    return;
+  }
+
+  list.innerHTML = users.map((u) => {
+    const sess = sessionByUser[u.id];
+    const ips = sess ? (Array.isArray(sess.ips) ? sess.ips : []) : [];
+    const suspended = u.suspended || (sess && sess.suspended);
+    const playing = sess && sess.services && sess.services.find((sv) => sv.connected);
+
+    // Status badge
+    let statusHtml;
+    if (suspended) {
+      statusHtml = `<span class="badge badge-suspended">${t("directory.suspended")}</span>`;
+    } else if (playing) {
+      statusHtml = `<span class="badge badge-playing">${t("players.playing")}</span>`;
+    } else if (ips.length > 0) {
+      statusHtml = `<span class="badge badge-ok">${t("players.ready")}</span>`;
+    } else {
+      statusHtml = `<span class="badge badge-offline">${t("players.not_ready")}</span>`;
+    }
+
+    // Services list with connection indicators
+    let servicesHtml = "";
+    if (sess && sess.services) {
+      servicesHtml = sess.services.map((sv) => {
+        const dot = sv.connected ? "🟢" : "⚪";
+        return `<span class="player-service">${dot} ${escapeHtml(sv.name)}</span>`;
+      }).join(" ");
+    } else {
+      const names = (u.allowedServices || []).map(serviceNameById);
+      servicesHtml = names.map((n) => `<span class="player-service">⚪ ${escapeHtml(n)}</span>`).join(" ");
+    }
+
+    // IP + expiry info
+    let ipInfo = "";
+    if (ips.length > 0) {
+      ipInfo = escapeHtml(ips.join(", "));
+      if (sess && sess.ipExpiresAt) {
+        const remaining = new Date(sess.ipExpiresAt).getTime() - Date.now();
+        if (remaining > 0) {
+          const hrs = Math.floor(remaining / 3600000);
+          const mins = Math.floor((remaining % 3600000) / 60000);
+          ipInfo += ` · ${t("firewall.expires_in", { hours: hrs, minutes: mins })}`;
+        }
+      }
+    }
+
+    // Action buttons
+    const revokeBtn = ips.length > 0
+      ? `<button class="btn btn-sm btn-red" onclick="revokeUserIp('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("btn.revoke")}</button>`
+      : "";
+    const suspendBtn = suspended
+      ? `<button class="btn btn-sm btn-green" onclick="reinstatePlayer('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("btn.reinstate")}</button>`
+      : `<button class="btn btn-sm btn-red" onclick="suspendPlayer('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("btn.suspend")}</button>`;
+    const linkBtn = `<button class="btn btn-sm" onclick="rotateUserToken('${escapeAttr(u.id)}','${escapeAttr(u.name)}')">${t("btn.new_link")}</button>`;
+
+    return `<li class="player-overview-item">
+      <div class="player-overview-header">
+        <strong>${escapeHtml(u.name)}</strong>
+        ${statusHtml}
+      </div>
+      <div class="player-overview-services">${servicesHtml}</div>
+      ${ipInfo ? `<div class="player-overview-ip muted">${ipInfo}</div>` : ""}
+      <div class="player-overview-actions btn-group-inline">${revokeBtn}${suspendBtn}${linkBtn}</div>
+    </li>`;
+  }).join("");
+
+  // Also render the service checkboxes in the player tab add-player form
+  renderPlayerTabCheckboxes();
+}
+
+function renderPlayerTabCheckboxes() {
+  const wrap = document.getElementById("player-tab-service-checkboxes");
+  if (!wrap || SERVICES.length < 2) { if (wrap) wrap.innerHTML = ""; return; }
+  wrap.innerHTML = `<span class="checkbox-label">${t("users.allowed_services")}:</span> ` +
+    SERVICES.map((s) =>
+      `<label class="service-cb">
+        <input type="checkbox" value="${escapeAttr(s.id)}" checked> ${escapeHtml(s.name)}
+      </label>`
+    ).join(" ");
+}
+
+function getPlayerTabSelectedServices() {
+  const boxes = document.querySelectorAll("#player-tab-service-checkboxes input[type=checkbox]");
+  if (boxes.length === 0) return SERVICES.map((s) => s.id);
+  const ids = [];
+  for (const cb of boxes) { if (cb.checked) ids.push(cb.value); }
+  return ids;
+}
+
+async function addPlayerFromTab() {
+  const input = document.getElementById("player-tab-name");
+  const name = input.value.trim();
+  if (!name) return toast(t("users.placeholder_name"), "error");
+  const allowedServices = getPlayerTabSelectedServices();
+  if (allowedServices.length === 0) return toast(t("users.no_services_selected"), "error");
+  const data = await api("/admin/api/users", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name, allowedServices }),
+  });
+  if (data && data.success) {
+    input.value = "";
+    const url = `${window.location.origin}/u/${data.token}`;
+    try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
+    prompt(t("users.copy_link_done"), url);
+    loadPlayerOverview();
+    loadUsers();
+    loadDirectory();
+  } else if (data) {
+    toast(data.error || "Failed", "error");
+  }
 }
 
 // ---- Dashboard boot (called after successful login) ---------------------

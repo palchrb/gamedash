@@ -67,6 +67,7 @@ export interface PublicUser {
   createdAt: string;
   hasCredentials: boolean;
   registrationOpenUntil: string | null;
+  suspended: boolean;
   credentials: Array<{
     id: string;
     deviceLabel: string | null;
@@ -84,6 +85,7 @@ export function toPublic(u: UserRecord): PublicUser {
     createdAt: u.createdAt,
     hasCredentials: u.credentials.length > 0,
     registrationOpenUntil: u.registrationOpenUntil,
+    suspended: u.suspended ?? false,
     credentials: u.credentials.map((c) => ({
       id: c.id,
       deviceLabel: c.deviceLabel ?? null,
@@ -151,6 +153,7 @@ export async function createUser(params: {
       history: [],
       credentials: [],
       registrationOpenUntil,
+      suspended: false,
     };
     draft.users.push(user);
     return { user, plainToken };
@@ -188,6 +191,24 @@ export async function rotateToken(id: string): Promise<string> {
     user.tokenHash = sha256Hex(plainToken);
   });
   return plainToken;
+}
+
+export async function suspendUser(id: string): Promise<UserRecord> {
+  return mutateUsers((draft) => {
+    const user = draft.users.find((u) => u.id === id);
+    if (!user) throw new Error("User not found");
+    user.suspended = true;
+    return user;
+  });
+}
+
+export async function reinstateUser(id: string): Promise<UserRecord> {
+  return mutateUsers((draft) => {
+    const user = draft.users.find((u) => u.id === id);
+    if (!user) throw new Error("User not found");
+    user.suspended = false;
+    return user;
+  });
 }
 
 export async function pushHistory(userId: string, entry: UserHistoryEntry): Promise<void> {

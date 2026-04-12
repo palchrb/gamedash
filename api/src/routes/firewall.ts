@@ -167,6 +167,7 @@ export function firewallRouter(): Router {
           ips,
           ipExpiresAt: rule?.expiresAt ?? null,
           services,
+          suspended: u.suspended ?? false,
         };
       });
 

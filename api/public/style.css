@@ -555,3 +555,71 @@ h3 {
 .service-cb input[type="checkbox"] {
   accent-color: #4ecca3;
 }
+
+/* Suspended badge */
+.badge-suspended {
+  background: #6b2c2c;
+  color: #e57373;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* Playing badge */
+.badge-playing {
+  background: #1a4a7a;
+  color: #90cdf4;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+/* Inline button group (directory actions) */
+.btn-group-inline {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.btn-group-inline .btn {
+  margin-top: 0;
+}
+
+/* Player overview list (Players tab) */
+.player-overview-list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+}
+.player-overview-item {
+  padding: 14px 0;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.player-overview-item:last-child {
+  border-bottom: none;
+}
+.player-overview-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.player-overview-services {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 4px;
+  font-size: 0.85rem;
+}
+.player-service {
+  color: #9aa0c0;
+}
+.player-overview-ip {
+  font-family: "Fira Code", "Cascadia Code", monospace;
+  font-size: 0.78rem;
+  margin-bottom: 6px;
+}
+.player-overview-actions {
+  margin-top: 8px;
+}

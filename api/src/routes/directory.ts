@@ -26,13 +26,14 @@ interface DirectoryEntry {
   kind: "admin" | "knock";
   id: string;
   name: string;
-  role: "admin" | "child";
+  role: "admin" | "player";
   createdAt: string;
   lastSeenAt: string | null;
   credentials: DirectoryCredential[];
   // knock-only fields
   registrationOpenUntil?: string | null;
   allowedServices?: string[];
+  suspended?: boolean;
 }
 
 function projectCredential(c: WebAuthnCredential): DirectoryCredential {
@@ -91,12 +92,13 @@ export function directoryRouter(): Router {
           kind: "knock",
           id: u.id,
           name: u.name,
-          role: "child",
+          role: "player",
           createdAt: u.createdAt,
           lastSeenAt: lastSeen,
           credentials: u.credentials.map(projectCredential),
           registrationOpenUntil: u.registrationOpenUntil,
           allowedServices: u.allowedServices,
+          suspended: u.suspended ?? false,
         });
       }
 

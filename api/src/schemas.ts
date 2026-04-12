@@ -123,6 +123,7 @@ export const UserRecordSchema = z.object({
   history: z.array(UserHistoryEntrySchema),
   credentials: z.array(WebAuthnCredentialSchema).default([]),
   registrationOpenUntil: IsoTimestampSchema.nullable().default(null),
+  suspended: z.boolean().default(false),
 });
 export type UserRecord = z.infer<typeof UserRecordSchema>;
 
