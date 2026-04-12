@@ -28,6 +28,16 @@ import type { ServiceConfig } from "../schemas";
 
 const MAX_BACKUPS = 5;
 
+/**
+ * Common BlueMap data paths (relative to the MC data dir).
+ * We check them in order and use the first one that exists.
+ */
+const BLUEMAP_CANDIDATES = [
+  "bluemap/web/maps",
+  "plugins/BlueMap/web/maps",
+  "plugins/bluemap/web/maps",
+];
+
 export class MinecraftAdapter extends BaseAdapter {
   private readonly rcon: RconConnection;
   private readonly hasDataDir: boolean;
@@ -221,6 +231,7 @@ export class MinecraftAdapter extends BaseAdapter {
         }
       }
       fsExtra.copySync(this.activeWorldDir, backupPath);
+      this.saveBluemapData(backupPath);
     } finally {
       if (autosaveDisabled) {
         try {
@@ -296,6 +307,8 @@ export class MinecraftAdapter extends BaseAdapter {
       // ignore
     }
     await this.fixOwnership(this.activeWorldDir);
+    // Restore BlueMap tiles if the backup has them
+    this.restoreBluemapData(backupPath);
     const worldName = name.replace(/-\d{4}-\d{2}-\d{2}T.*$/u, "");
     if (worldName) fs.writeFileSync(this.currentWorldFile, worldName);
     await this.dockerAction("start");
@@ -327,6 +340,7 @@ export class MinecraftAdapter extends BaseAdapter {
     if (!currentWorldName) throw new Error("current-world.txt is empty");
     const dest = path.join(this.worldsDir, currentWorldName);
     fsExtra.copySync(this.activeWorldDir, dest);
+    this.saveBluemapData(dest);
     return currentWorldName;
   }
 
@@ -360,8 +374,11 @@ export class MinecraftAdapter extends BaseAdapter {
     oldWorldName: string | null,
     name: string,
   ): Promise<void> {
+    // Save old world + its BlueMap tiles
     if (oldWorldName && fs.existsSync(this.activeWorldDir)) {
-      fsExtra.copySync(this.activeWorldDir, path.join(this.worldsDir, oldWorldName));
+      const oldSave = path.join(this.worldsDir, oldWorldName);
+      fsExtra.copySync(this.activeWorldDir, oldSave);
+      this.saveBluemapData(oldSave);
     }
     fs.rmSync(this.activeWorldDir, { recursive: true, force: true });
     fsExtra.copySync(newWorldPath, this.activeWorldDir);
@@ -371,6 +388,8 @@ export class MinecraftAdapter extends BaseAdapter {
       // ignore
     }
     await this.fixOwnership(this.activeWorldDir);
+    // Restore BlueMap tiles for the new world (if previously saved)
+    this.restoreBluemapData(newWorldPath);
     fs.writeFileSync(this.currentWorldFile, name);
     await this.dockerAction("start");
   }
@@ -397,12 +416,78 @@ export class MinecraftAdapter extends BaseAdapter {
   }
 
   private async applyNewWorld(oldWorldName: string | null, name: string): Promise<void> {
+    // Save old world + its BlueMap tiles before wiping
     if (oldWorldName && fs.existsSync(this.activeWorldDir)) {
-      fsExtra.copySync(this.activeWorldDir, path.join(this.worldsDir, oldWorldName));
+      const oldSave = path.join(this.worldsDir, oldWorldName);
+      fsExtra.copySync(this.activeWorldDir, oldSave);
+      this.saveBluemapData(oldSave);
     }
     fs.rmSync(this.activeWorldDir, { recursive: true, force: true });
     fs.writeFileSync(this.currentWorldFile, name);
     await this.dockerAction("start");
+  }
+
+  // ── BlueMap tile management ──────────────────────────────────────────
+
+  /**
+   * Find the active BlueMap maps directory, or null if BlueMap isn't
+   * installed. Caches nothing — the dir might appear after a plugin
+   * install or server restart.
+   */
+  private findBluemapMapsDir(): string | null {
+    if (!this.hasDataDir) return null;
+    for (const candidate of BLUEMAP_CANDIDATES) {
+      const p = path.join(this.dataDir, candidate);
+      if (fs.existsSync(p)) return p;
+    }
+    return null;
+  }
+
+  /**
+   * Copy BlueMap rendered tiles into a world save dir so they travel
+   * with the world. Stored as `.bluemap-maps/` inside the world dir.
+   */
+  private saveBluemapData(worldSaveDir: string): void {
+    const mapsDir = this.findBluemapMapsDir();
+    if (!mapsDir) return;
+    const dest = path.join(worldSaveDir, ".bluemap-maps");
+    try {
+      if (fs.existsSync(dest)) {
+        fs.rmSync(dest, { recursive: true, force: true });
+      }
+      fsExtra.copySync(mapsDir, dest);
+      logger().info({ id: this.id, dest }, "saved BlueMap tiles with world");
+    } catch (err) {
+      logger().warn(
+        { err: (err as Error).message, id: this.id },
+        "failed to save BlueMap tiles — map will re-render after switch",
+      );
+    }
+  }
+
+  /**
+   * Restore BlueMap tiles from a world save dir, if present.
+   * Replaces the current BlueMap maps directory entirely.
+   */
+  private restoreBluemapData(worldSaveDir: string): void {
+    const mapsDir = this.findBluemapMapsDir();
+    if (!mapsDir) return;
+    const src = path.join(worldSaveDir, ".bluemap-maps");
+    if (!fs.existsSync(src)) {
+      // No saved tiles — BlueMap will re-render from scratch.
+      logger().info({ id: this.id }, "no saved BlueMap tiles for this world — will re-render");
+      return;
+    }
+    try {
+      fs.rmSync(mapsDir, { recursive: true, force: true });
+      fsExtra.copySync(src, mapsDir);
+      logger().info({ id: this.id }, "restored BlueMap tiles from world save");
+    } catch (err) {
+      logger().warn(
+        { err: (err as Error).message, id: this.id },
+        "failed to restore BlueMap tiles — map will re-render",
+      );
+    }
   }
 
   private async fixOwnership(targetPath: string): Promise<void> {
