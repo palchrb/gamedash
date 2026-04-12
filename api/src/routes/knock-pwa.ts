@@ -515,9 +515,15 @@ export function knockPwaRouter(): Router {
       description: "Gamedash — tap to play",
       icons: [
         {
-          src: `/u/${token}/icon.svg`,
-          sizes: "192x192 512x512",
-          type: "image/svg+xml",
+          src: `/u/${token}/icon-192.png`,
+          sizes: "192x192",
+          type: "image/png",
+          purpose: "any maskable",
+        },
+        {
+          src: `/u/${token}/icon-512.png`,
+          sizes: "512x512",
+          type: "image/png",
           purpose: "any maskable",
         },
       ],
@@ -526,6 +532,18 @@ export function knockPwaRouter(): Router {
 
   router.get("/u/:token/icon.svg", (_req, res) => {
     res.type("image/svg+xml").sendFile(path.join(PWA_DIR, "icon.svg"));
+  });
+  router.get("/u/:token/icon-192.png", (_req, res) => {
+    res.type("image/png").sendFile(path.join(PWA_DIR, "icon-192.png"));
+  });
+  router.get("/u/:token/icon-512.png", (_req, res) => {
+    res.type("image/png").sendFile(path.join(PWA_DIR, "icon-512.png"));
+  });
+  router.get("/u/:token/favicon.png", (_req, res) => {
+    res.type("image/png").sendFile(path.join(PWA_DIR, "favicon.png"));
+  });
+  router.get("/u/:token/apple-touch-icon.png", (_req, res) => {
+    res.type("image/png").sendFile(path.join(PWA_DIR, "apple-touch-icon.png"));
   });
 
   router.get("/u/:token/sw.js", (_req, res) => {

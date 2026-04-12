@@ -459,9 +459,15 @@ export function portalRouter(): Router {
       description: "Gamedash — tap to play",
       icons: [
         {
-          src: "/my/icon.svg",
-          sizes: "192x192 512x512",
-          type: "image/svg+xml",
+          src: "/my/icon-192.png",
+          sizes: "192x192",
+          type: "image/png",
+          purpose: "any maskable",
+        },
+        {
+          src: "/my/icon-512.png",
+          sizes: "512x512",
+          type: "image/png",
           purpose: "any maskable",
         },
       ],
@@ -470,6 +476,21 @@ export function portalRouter(): Router {
 
   router.get("/my/icon.svg", (_req, res) => {
     res.type("image/svg+xml").sendFile(path.join(PWA_DIR, "icon.svg"));
+  });
+  router.get("/my/icon-192.png", (_req, res) => {
+    res.type("image/png").sendFile(path.join(PWA_DIR, "icon-192.png"));
+  });
+  router.get("/my/icon-512.png", (_req, res) => {
+    res.type("image/png").sendFile(path.join(PWA_DIR, "icon-512.png"));
+  });
+  router.get("/my/logo.png", (_req, res) => {
+    res.type("image/png").sendFile(path.join(PWA_DIR, "logo.png"));
+  });
+  router.get("/my/favicon.png", (_req, res) => {
+    res.type("image/png").sendFile(path.join(PWA_DIR, "favicon.png"));
+  });
+  router.get("/my/apple-touch-icon.png", (_req, res) => {
+    res.type("image/png").sendFile(path.join(PWA_DIR, "apple-touch-icon.png"));
   });
 
   router.get("/my/sw.js", (_req, res) => {
