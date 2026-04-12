@@ -49,6 +49,13 @@ export const ServiceConfigSchema = z.object({
     .optional(),
   connectAddress: z.string().optional(),
   connectGuideUrl: z.string().url().optional(),
+  connectHelper: z
+    .object({
+      type: z.enum(["impostor"]),
+      scheme: z.enum(["http", "https"]).default("http"),
+      name: z.string().optional(),
+    })
+    .optional(),
   backupsDir: z.string().optional(),
   worldsDir: z.string().optional(),
   activeWorldDir: z.string().optional(),

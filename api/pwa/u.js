@@ -346,7 +346,10 @@
                 `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ${t("btn.view_map")}</a>`
               );
             }
-            if (s.connectGuideUrl) {
+            const imp = impostorActionInline(s);
+            if (imp) {
+              actions.push(imp);
+            } else if (s.connectGuideUrl) {
               actions.push(
                 `<a class="guide-link-inline" href="${escapeAttr(s.connectGuideUrl)}" target="_blank" rel="noopener">` +
                 `${t("btn.setup_guide")}</a>`
@@ -375,7 +378,10 @@
             `<span class="map-icon">&#x1f5fa;&#xfe0e;</span> ${escapeHtml(t("btn.view_map"))}</a>`
           );
         }
-        if (s.connectGuideUrl) {
+        const impBlock = impostorActionBlock(s);
+        if (impBlock) {
+          parts.push(impBlock);
+        } else if (s.connectGuideUrl) {
           parts.push(
             `<a class="guide-link" href="${escapeAttr(s.connectGuideUrl)}" target="_blank" rel="noopener">` +
             `${escapeHtml(t("btn.setup_guide"))}</a>`
@@ -394,6 +400,8 @@
           }).catch(() => {});
         };
       }
+      // Wire Impostor download buttons (desktop)
+      wireImpostorDownloads();
     } catch (err) {
       console.error("refreshState failed:", err);
     }
@@ -493,6 +501,107 @@
   }
   function escapeAttr(s) {
     return escapeHtml(s);
+  }
+
+  // ---- Among Us / Impostor connect helper --------------------------------
+  const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  function parseHostPort(addr) {
+    if (!addr) return null;
+    const i = addr.lastIndexOf(":");
+    if (i <= 0) return { host: addr, port: null };
+    const p = parseInt(addr.substring(i + 1), 10);
+    return { host: addr.substring(0, i), port: Number.isNaN(p) ? null : p };
+  }
+
+  function impostorDeepLink(host, port, scheme, name) {
+    const params = new URLSearchParams({
+      servername: name,
+      serverport: String(port),
+      serverip: scheme + "://" + host,
+      usedtls: "false",
+    });
+    return "amongus://init?" + params.toString();
+  }
+
+  function impostorRegionInfo(host, port, scheme, name) {
+    return JSON.stringify({
+      CurrentRegionIdx: 3,
+      Regions: [{
+        $type: "StaticHttpRegionInfo, Assembly-CSharp",
+        Name: name,
+        PingServer: host,
+        Servers: [{
+          Name: "http-1",
+          Ip: scheme + "://" + host,
+          Port: port,
+          UseDtls: false,
+        }],
+        TranslateName: 1003,
+      }],
+    }, null, 2);
+  }
+
+  function downloadFile(content, filename) {
+    var blob = new Blob([content], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    URL.revokeObjectURL(url);
+    a.remove();
+  }
+
+  function impostorParams(s) {
+    if (!s.connectHelper || s.connectHelper.type !== "impostor" || !s.connectAddress) return null;
+    var parsed = parseHostPort(s.connectAddress);
+    if (!parsed) return null;
+    var scheme = s.connectHelper.scheme || "http";
+    return {
+      host: parsed.host,
+      port: parsed.port || (scheme === "https" ? 443 : 22023),
+      scheme: scheme,
+      name: s.connectHelper.name || s.name,
+    };
+  }
+
+  /** Inline button for multi-service list */
+  function impostorActionInline(s) {
+    var p = impostorParams(s);
+    if (!p) return "";
+    if (IS_MOBILE) {
+      return `<a class="impostor-btn-inline" href="${escapeAttr(impostorDeepLink(p.host, p.port, p.scheme, p.name))}">${t("impostor.open_app")}</a>`;
+    }
+    return `<button class="impostor-btn-inline" data-impostor-dl ` +
+      `data-host="${escapeAttr(p.host)}" data-port="${p.port}" ` +
+      `data-scheme="${escapeAttr(p.scheme)}" data-name="${escapeAttr(p.name)}">${t("impostor.download_config")}</button>`;
+  }
+
+  /** Block for single-service view */
+  function impostorActionBlock(s) {
+    var p = impostorParams(s);
+    if (!p) return "";
+    if (IS_MOBILE) {
+      return `<a class="impostor-btn" href="${escapeAttr(impostorDeepLink(p.host, p.port, p.scheme, p.name))}">${t("impostor.open_app")}</a>` +
+        `<p class="helper-hint muted">${t("impostor.hint_mobile")}</p>`;
+    }
+    return `<button class="impostor-btn" data-impostor-dl ` +
+      `data-host="${escapeAttr(p.host)}" data-port="${p.port}" ` +
+      `data-scheme="${escapeAttr(p.scheme)}" data-name="${escapeAttr(p.name)}">${t("impostor.download_config")}</button>` +
+      `<p class="helper-hint muted">${t("impostor.hint_desktop")}</p>`;
+  }
+
+  function wireImpostorDownloads() {
+    for (var el of document.querySelectorAll("[data-impostor-dl]")) {
+      el.onclick = function () {
+        var d = this.dataset;
+        var json = impostorRegionInfo(d.host, parseInt(d.port, 10), d.scheme, d.name);
+        downloadFile(json, "regionInfo.json");
+        showToast(t("impostor.downloaded"), "success");
+      };
+    }
   }
 
   // ---- Wire up ----------------------------------------------------------

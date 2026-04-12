@@ -29,6 +29,7 @@ export class BaseAdapter implements ServiceAdapter {
   readonly mapProxy?: MapProxyTarget;
   readonly connectAddress?: string;
   readonly connectGuideUrl?: string;
+  readonly connectHelper?: { type: "impostor"; scheme: "http" | "https"; name?: string };
   readonly capabilities: Set<Capability>;
   protected readonly config: ServiceConfig;
 
@@ -48,6 +49,13 @@ export class BaseAdapter implements ServiceAdapter {
     }
     if (config.connectAddress) this.connectAddress = config.connectAddress;
     if (config.connectGuideUrl) this.connectGuideUrl = config.connectGuideUrl;
+    if (config.connectHelper) {
+      this.connectHelper = {
+        type: config.connectHelper.type,
+        scheme: config.connectHelper.scheme,
+        ...(config.connectHelper.name ? { name: config.connectHelper.name } : {}),
+      };
+    }
     this.config = config;
     this.capabilities = new Set<Capability>(["lifecycle"]);
   }

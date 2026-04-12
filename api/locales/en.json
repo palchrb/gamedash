@@ -61,6 +61,11 @@
   "btn.view_map_named": "View {service} map",
   "btn.setup_guide": "Setup guide",
   "btn.install_app": "Install as app",
+  "impostor.open_app": "Open in Among Us",
+  "impostor.download_config": "Download server config",
+  "impostor.downloaded": "regionInfo.json downloaded",
+  "impostor.hint_mobile": "Adds the server to Among Us. Pick it from the region menu to play.",
+  "impostor.hint_desktop": "Save to your Among Us folder, then pick the server from the region menu.",
 
   "gamemode.survival": "Survival",
   "gamemode.creative": "Creative",

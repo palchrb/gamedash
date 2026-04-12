@@ -156,6 +156,7 @@ export function knockPwaRouter(): Router {
           ...(mapUrl ? { mapUrl } : {}),
           ...(a.connectAddress ? { connectAddress: a.connectAddress } : {}),
           ...(a.connectGuideUrl ? { connectGuideUrl: a.connectGuideUrl } : {}),
+          ...(a.connectHelper ? { connectHelper: a.connectHelper } : {}),
         };
       });
       const c = config();
@@ -191,6 +192,7 @@ export function knockPwaRouter(): Router {
           ...(mapUrl ? { mapUrl } : {}),
           ...(a.connectAddress ? { connectAddress: a.connectAddress } : {}),
           ...(a.connectGuideUrl ? { connectGuideUrl: a.connectGuideUrl } : {}),
+          ...(a.connectHelper ? { connectHelper: a.connectHelper } : {}),
         };
       });
 

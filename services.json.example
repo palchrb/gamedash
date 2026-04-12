@@ -30,7 +30,11 @@
       "type": "generic",
       "container": "impostor",
       "connectAddress": "play.example.com:22023",
-      "connectGuideUrl": "https://impostor.github.io/Impostor/",
+      "connectHelper": {
+        "type": "impostor",
+        "scheme": "http",
+        "name": "My Server"
+      },
       "ports": [
         { "port": "22023", "proto": "udp" }
       ]
