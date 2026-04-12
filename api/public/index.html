@@ -63,7 +63,7 @@
     <!-- Tab navigation -->
     <nav class="tabs">
       <button class="tab active" data-tab="services" data-i18n="tab.services">Services</button>
-      <button class="tab" data-tab="players" data-i18n="tab.players">Players</button>
+      <button class="tab" data-tab="play" data-i18n="tab.play">Play</button>
       <button class="tab" data-tab="management" data-i18n="tab.management">Management</button>
     </nav>
 
@@ -190,30 +190,39 @@
 
     </div>
 
-    <!-- ── Players tab (admin's own knock / play view) ─────────────── -->
-    <div id="tab-players" class="tab-content">
+    <!-- ── Play tab (identical to player PWA) ──────────────────────── -->
+    <div id="tab-play" class="tab-content">
+      <div class="pwa">
+        <header>
+          <h1 id="play-greeting">…</h1>
+          <div id="play-status" class="status">…</div>
+        </header>
 
-      <!-- Hero: Allow My IP button + status -->
-      <section class="card" id="play-hero">
-        <button id="play-knock-btn" class="big-btn" onclick="playKnock()">Allow My IP</button>
-        <p id="play-status" class="meta"></p>
-      </section>
+        <section id="play-hero" class="card hero">
+          <button id="play-knock-btn" class="big-btn" disabled>…</button>
+          <p id="play-hero-meta" class="meta"></p>
+        </section>
 
-      <!-- Services: connect info, map links -->
-      <div id="play-map-links"></div>
-      <section class="card" id="play-services-card" hidden>
-        <h2 data-i18n="card.services">Services</h2>
-        <ul id="play-services-list" class="play-services-list"></ul>
-      </section>
+        <div id="play-map-links"></div>
 
-      <!-- Who is playing now -->
-      <section class="card">
-        <h2 data-i18n="card.active_sessions">Who is playing now</h2>
-        <ul id="play-active-list" class="play-active-list">
-          <li class="muted" data-i18n="common.loading">Loading…</li>
-        </ul>
-      </section>
+        <section class="card" id="play-services-card" hidden>
+          <h2 data-i18n="users.allowed_services">Services</h2>
+          <ul id="play-services-list"></ul>
+        </section>
 
+        <section class="card" id="play-active-card">
+          <h2 data-i18n="card.active_sessions">Who is playing now</h2>
+          <ul id="play-active-list"><li class="muted" data-i18n="common.loading">Loading…</li></ul>
+        </section>
+
+        <section class="card" id="play-stats-card">
+          <h2 data-i18n="card.stats">Playtime statistics</h2>
+          <button onclick="loadStatsLeaderboard()" class="btn btn-sm" data-i18n="common.refresh" style="margin-bottom:8px">Refresh</button>
+          <ul id="play-stats-leaderboard" class="stats-list"></ul>
+        </section>
+
+        <button id="play-revoke-btn" class="link-btn" hidden>Revoke my IP</button>
+      </div>
     </div>
 
     <!-- ── Management tab ────────────────────────────────────────────── -->
