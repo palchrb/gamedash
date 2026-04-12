@@ -180,7 +180,7 @@ function initTabs() {
         loadActiveSessions();
         loadStatsLeaderboard();
       }
-      if (tab === "players") {
+      if (tab === "play") {
         loadPlayerOverview();
       }
     });
@@ -352,7 +352,7 @@ function poll() {
       if (caps.includes("worlds")) loadWorlds();
       if (caps.includes("backup")) listBackups();
     }
-  } else if (activeTab === "players") {
+  } else if (activeTab === "play") {
     pollCount++;
     if (pollCount % 3 === 0) {
       loadPlayerOverview();
@@ -388,7 +388,7 @@ document.addEventListener("visibilitychange", () => {
       const caps = SERVICE_MAP[CURRENT_SERVICE]?.capabilities || [];
       if (caps.includes("worlds")) loadWorlds();
       if (caps.includes("backup")) listBackups();
-    } else if (activeTab === "players") {
+    } else if (activeTab === "play") {
       loadPlayerOverview();
     } else {
       loadActiveSessions();
@@ -1039,17 +1039,74 @@ async function loadStatsLeaderboard() {
     .join("");
 }
 
-// ---- Players tab (admin's own knock / play view) ------------------------
+// ---- Play tab (mirrors the player PWA) ----------------------------------
 let playCountdownTimer = null;
+const IS_MOBILE = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+function parseHostPort(addr) {
+  if (!addr) return null;
+  const i = addr.lastIndexOf(":");
+  if (i <= 0) return { host: addr, port: null };
+  const p = parseInt(addr.substring(i + 1), 10);
+  return { host: addr.substring(0, i), port: Number.isNaN(p) ? null : p };
+}
+function playImpostorParams(s) {
+  if (!s.connectHelper || s.connectHelper.type !== "impostor" || !s.connectAddress) return null;
+  const parsed = parseHostPort(s.connectAddress);
+  if (!parsed) return null;
+  const scheme = s.connectHelper.scheme || "http";
+  return { host: parsed.host, port: parsed.port || (scheme === "https" ? 443 : 22023), scheme, name: s.connectHelper.name || s.name };
+}
+function playImpostorDeepLink(host, port, scheme, name) {
+  const params = new URLSearchParams({ servername: name, serverport: String(port), serverip: scheme + "://" + host, usedtls: "false" });
+  return "amongus://init?" + params.toString();
+}
+function playImpostorRegionInfo(host, port, scheme, name) {
+  return JSON.stringify({ CurrentRegionIdx: 3, Regions: [{ "$type": "StaticHttpRegionInfo, Assembly-CSharp", Name: name, PingServer: host, Servers: [{ Name: "http-1", Ip: scheme + "://" + host, Port: port, UseDtls: false }], TranslateName: 1003 }] }, null, 2);
+}
+function playImpostorActionInline(s) {
+  const p = playImpostorParams(s);
+  if (!p) return "";
+  if (IS_MOBILE) {
+    return `<a class="impostor-btn-inline" href="${escapeAttr(playImpostorDeepLink(p.host, p.port, p.scheme, p.name))}">${t("impostor.open_app")}</a>`;
+  }
+  return `<button class="impostor-btn-inline" data-impostor-dl data-host="${escapeAttr(p.host)}" data-port="${p.port}" data-scheme="${escapeAttr(p.scheme)}" data-name="${escapeAttr(p.name)}">${t("impostor.download_config")}</button>`;
+}
+function playImpostorActionBlock(s) {
+  const p = playImpostorParams(s);
+  if (!p) return "";
+  if (IS_MOBILE) {
+    return `<a class="impostor-btn" href="${escapeAttr(playImpostorDeepLink(p.host, p.port, p.scheme, p.name))}">${t("impostor.open_app")}</a>` +
+      `<p class="helper-hint muted">${t("impostor.hint_mobile")}</p>`;
+  }
+  return `<button class="impostor-btn" data-impostor-dl data-host="${escapeAttr(p.host)}" data-port="${p.port}" data-scheme="${escapeAttr(p.scheme)}" data-name="${escapeAttr(p.name)}">${t("impostor.download_config")}</button>` +
+    `<div class="helper-hint muted"><p>${t("impostor.hint_desktop")}</p>` +
+    `<p class="impostor-path" data-copy="${escapeAttr(t("impostor.path_windows"))}" title="${t("service.click_to_copy")}">${escapeHtml(t("impostor.path_windows"))}</p>` +
+    `<p>${t("impostor.hint_desktop_after")}</p></div>`;
+}
+function wirePlayImpostorDownloads() {
+  for (const el of document.querySelectorAll("#tab-play [data-impostor-dl]")) {
+    el.onclick = function () {
+      const d = this.dataset;
+      const json = playImpostorRegionInfo(d.host, parseInt(d.port, 10), d.scheme, d.name);
+      const blob = new Blob([json], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url; a.download = "regionInfo.json";
+      document.body.appendChild(a); a.click();
+      URL.revokeObjectURL(url); a.remove();
+      toast(t("impostor.downloaded"), "success");
+    };
+  }
+}
 
 async function playKnock() {
-  const btn = document.getElementById("play-knock-btn");
-  btn.textContent = "Detecting IP...";
+  const btn = $("play-knock-btn");
   btn.disabled = true;
   const ips = await detectPublicIps();
   if (ips.length === 0) {
     btn.disabled = false;
-    btn.textContent = t("btn.allow_my_ip");
+    btn.textContent = t("btn.knock_all");
     return toast("Could not detect your public IP", "error");
   }
   const data = await api("/admin/api/firewall/add", {
@@ -1060,158 +1117,180 @@ async function playKnock() {
   btn.disabled = false;
   if (data && data.success) {
     toast(t("knock.success"), "success");
-    refreshPlayTab();
-  } else {
-    btn.textContent = t("btn.allow_my_ip");
-    if (data) toast(data.error || "Failed", "error");
+  } else if (data) {
+    toast(data.error || "Failed", "error");
   }
+  refreshPlayState();
+  refreshPlayActive();
 }
 
-async function refreshPlayTab() {
-  // Fetch firewall rules to find admin's own IP rule + active sessions
-  const [fwData, sessData] = await Promise.all([
-    api("/admin/api/firewall"),
-    api("/admin/api/active-sessions"),
-  ]);
+async function playRevoke() {
+  // Find admin's rule and remove it
+  const fwData = await api("/admin/api/firewall");
+  if (!fwData || !fwData.rules) return;
+  const myRule = fwData.rules.find((r) => !r.userId);
+  if (!myRule) return;
+  await api("/admin/api/firewall/remove", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ips: [myRule.ips[0]] }),
+  });
+  toast("Revoked", "success");
+  refreshPlayState();
+}
 
-  // --- Hero: admin's IP status ---
-  const btn = document.getElementById("play-knock-btn");
-  const statusEl = document.getElementById("play-status");
-  // Find an admin-owned rule (no userId, or label contains "Admin" / "My IP")
+async function refreshPlayState() {
+  const fwData = await api("/admin/api/firewall");
+  const knockBtn = $("play-knock-btn");
+  const statusEl = $("play-status");
+  const revokeBtn = $("play-revoke-btn");
+  const mapLinksEl = $("play-map-links");
+  const svcCard = $("play-services-card");
+  const svcList = $("play-services-list");
+
   let myRule = null;
   if (fwData && fwData.rules) {
-    // Admin rules have no userId (they're manual rules, not knock rules)
     myRule = fwData.rules.find((r) => !r.userId);
   }
+
+  revokeBtn.hidden = !myRule;
   if (myRule) {
-    btn.textContent = t("knock.ready");
-    btn.classList.add("big-btn-ok");
-    if (myRule.expiresAt) {
+    knockBtn.classList.add("ok");
+    knockBtn.textContent = t("knock.ready");
+    knockBtn.disabled = false;
+    const update = () => {
+      if (!myRule.expiresAt) { statusEl.textContent = ""; return; }
       const remain = new Date(myRule.expiresAt).getTime() - Date.now();
-      if (remain > 0) {
-        const update = () => {
-          const rem = new Date(myRule.expiresAt).getTime() - Date.now();
-          if (rem <= 0) {
-            statusEl.textContent = "";
-            btn.textContent = t("btn.allow_my_ip");
-            btn.classList.remove("big-btn-ok");
-            clearInterval(playCountdownTimer);
-            return;
-          }
-          const h = Math.floor(rem / 3600000);
-          const m = Math.floor((rem % 3600000) / 60000);
-          statusEl.textContent = t("knock.expires_in", { hours: h, minutes: m });
-        };
-        update();
+      if (remain <= 0) {
+        statusEl.textContent = t("knock.never");
+        knockBtn.classList.remove("ok");
+        knockBtn.textContent = t("btn.knock_all");
         clearInterval(playCountdownTimer);
-        playCountdownTimer = setInterval(update, 30000);
-      } else {
-        statusEl.textContent = "";
+        return;
       }
-    } else {
-      statusEl.textContent = "";
-    }
+      const h = Math.floor(remain / 3600000);
+      const m = Math.floor((remain % 3600000) / 60000);
+      statusEl.textContent = t("knock.expires_in", { hours: h, minutes: m });
+    };
+    update();
+    clearInterval(playCountdownTimer);
+    playCountdownTimer = setInterval(update, 30000);
   } else {
-    btn.textContent = t("btn.allow_my_ip");
-    btn.classList.remove("big-btn-ok");
     statusEl.textContent = t("knock.never");
+    knockBtn.classList.remove("ok");
+    knockBtn.textContent = t("btn.knock_all");
+    knockBtn.disabled = false;
     clearInterval(playCountdownTimer);
   }
 
-  // --- Service connect info + map links ---
-  const mapLinksEl = document.getElementById("play-map-links");
-  const svcCard = document.getElementById("play-services-card");
-  const svcList = document.getElementById("play-services-list");
-
-  function connectInfoHtml(s) {
+  // Connection info helper (identical to PWA)
+  function connectInfo(s) {
     if (s.connectAddress) {
-      return `<span class="connect-addr" data-copy="${escapeAttr(s.connectAddress)}" title="${t("service.click_to_copy")}">${escapeHtml(s.connectAddress)}</span>`;
+      return `<span class="connect-addr" title="${t("service.click_to_copy")}" data-copy="${escapeAttr(s.connectAddress)}">${escapeHtml(s.connectAddress)}</span>`;
     }
     if (s.ports && s.ports.length > 0) {
       const portStr = s.ports.map((p) => `${p.port}/${p.proto}`).join(", ");
-      return `<span class="muted">${escapeHtml(portStr)}</span>`;
+      return `<span class="connect-ports muted">${escapeHtml(portStr)}</span>`;
     }
     return "";
   }
 
-  if (SERVICES.length === 1) {
-    const s = SERVICES[0];
-    const parts = [];
-    parts.push(connectInfoHtml(s));
-    if (s.mapUrl) {
-      parts.push(`<a class="play-map-link" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">${t("btn.view_map")}</a>`);
-    }
-    if (s.connectGuideUrl) {
-      parts.push(`<a class="play-guide-link" href="${escapeAttr(s.connectGuideUrl)}" target="_blank" rel="noopener">${t("btn.setup_guide")}</a>`);
-    }
-    mapLinksEl.innerHTML = parts.filter(Boolean).join("");
-    svcCard.hidden = true;
-  } else if (SERVICES.length > 1) {
-    mapLinksEl.innerHTML = "";
+  // Per-service list (multi) or inline connect info (single)
+  if (SERVICES.length > 1) {
     svcCard.hidden = false;
     svcList.innerHTML = SERVICES.map((s) => {
       const actions = [];
       if (s.mapUrl) {
-        actions.push(`<a class="play-map-link" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener">${t("btn.view_map")}</a>`);
+        actions.push(`<a class="map-link-inline" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener"><span class="map-icon">&#x1f5fa;&#xfe0e;</span> ${t("btn.view_map")}</a>`);
       }
-      if (s.connectGuideUrl) {
-        actions.push(`<a class="play-guide-link" href="${escapeAttr(s.connectGuideUrl)}" target="_blank" rel="noopener">${t("btn.setup_guide")}</a>`);
+      const imp = playImpostorActionInline(s);
+      if (imp) {
+        actions.push(imp);
+      } else if (s.connectGuideUrl) {
+        actions.push(`<a class="guide-link-inline" href="${escapeAttr(s.connectGuideUrl)}" target="_blank" rel="noopener">${t("btn.setup_guide")}</a>`);
       }
-      return `<li>
-        <div class="play-svc-info"><strong>${escapeHtml(s.name)}</strong> ${connectInfoHtml(s)}</div>
-        ${actions.length ? `<span class="play-svc-actions">${actions.join(" ")}</span>` : ""}
-      </li>`;
+      const impHelp = (!IS_MOBILE && playImpostorParams(s))
+        ? `<div class="impostor-help-row"><p>${t("impostor.hint_desktop")}</p><p><span class="impostor-path" data-copy="${escapeAttr(t("impostor.path_windows"))}" title="${t("service.click_to_copy")}">${escapeHtml(t("impostor.path_windows"))}</span></p><p>${t("impostor.hint_desktop_after")}</p></div>`
+        : "";
+      return `<li${impHelp ? ' class="li-wrap"' : ''}>` +
+        `<div class="li-info"><span>${escapeHtml(s.name)}</span><div class="connect-row">${connectInfo(s)}</div></div>` +
+        (actions.length > 0 ? `<span class="li-actions">${actions.join(" ")}</span>` : "") +
+        impHelp + `</li>`;
     }).join("");
+  } else if (SERVICES.length === 1) {
+    svcCard.hidden = true;
+    const s = SERVICES[0];
+    const parts = [];
+    if (s.connectAddress || (s.ports && s.ports.length > 0)) parts.push(connectInfo(s));
+    if (s.mapUrl) {
+      parts.push(`<a class="map-link" href="${escapeAttr(s.mapUrl)}" target="_blank" rel="noopener"><span class="map-icon">&#x1f5fa;&#xfe0e;</span> ${escapeHtml(t("btn.view_map"))}</a>`);
+    }
+    const impBlock = playImpostorActionBlock(s);
+    if (impBlock) {
+      parts.push(impBlock);
+    } else if (s.connectGuideUrl) {
+      parts.push(`<a class="guide-link" href="${escapeAttr(s.connectGuideUrl)}" target="_blank" rel="noopener">${escapeHtml(t("btn.setup_guide"))}</a>`);
+    }
+    mapLinksEl.innerHTML = parts.join("");
   }
 
-  // Wire click-to-copy
-  for (const el of document.querySelectorAll("#tab-players [data-copy]")) {
+  // Wire click-to-copy and impostor downloads
+  for (const el of document.querySelectorAll("#tab-play [data-copy]")) {
     el.onclick = () => {
-      navigator.clipboard.writeText(el.dataset.copy).then(() => {
-        toast(t("service.copied"), "success");
-      }).catch(() => {});
+      navigator.clipboard.writeText(el.dataset.copy).then(() => toast(t("service.copied"), "success")).catch(() => {});
     };
   }
-
-  // --- Active sessions ---
-  const activeList = document.getElementById("play-active-list");
-  const sessions = (sessData && sessData.sessions) || [];
-  if (sessions.length === 0) {
-    activeList.innerHTML = `<li class="muted">${t("players.no_players")}</li>`;
-  } else {
-    activeList.innerHTML = sessions.map((s) => {
-      const ips = Array.isArray(s.ips) ? s.ips : [];
-      const playing = s.services.find((sv) => sv.connected);
-      const allowed = ips.length > 0;
-      let dot = "dot-gray", label;
-      if (s.suspended) {
-        dot = "dot-red";
-        label = t("directory.suspended");
-      } else if (playing) {
-        dot = "dot-green";
-        label = t("active.connected", { service: playing.name });
-      } else if (allowed) {
-        dot = "dot-yellow";
-        label = t("active.idle_allowed");
-      } else {
-        label = t("active.idle_unallowed");
-      }
-      return `<li class="play-active-item">
-        <span><span class="play-dot ${dot}"></span><strong>${escapeHtml(s.name)}</strong></span>
-        <span class="muted">${escapeHtml(label)}</span>
-      </li>`;
-    }).join("");
-  }
+  wirePlayImpostorDownloads();
 }
 
-// Called when switching to the players tab and on interval
+async function refreshPlayActive() {
+  const sessData = await api("/admin/api/active-sessions");
+  const activeList = $("play-active-list");
+  const sessions = (sessData && sessData.sessions) || [];
+  if (sessions.length === 0) {
+    activeList.innerHTML = `<li class="muted">${t("stats.no_data")}</li>`;
+    return;
+  }
+  activeList.innerHTML = sessions.map((s) => {
+    const ips = Array.isArray(s.ips) ? s.ips : [];
+    const playing = s.services.find((sv) => sv.connected);
+    const allowed = ips.length > 0;
+    let dot = "gray", label;
+    if (s.suspended) {
+      dot = "gray"; label = t("directory.suspended");
+    } else if (playing) {
+      dot = "green"; label = t("active.connected", { service: playing.name });
+    } else if (allowed) {
+      dot = "yellow"; label = t("active.idle_allowed");
+    } else {
+      label = t("active.idle_unallowed");
+    }
+    return `<li><span><span class="dot ${dot}"></span>${escapeHtml(s.name)}</span><span class="muted">${escapeHtml(label)}</span></li>`;
+  }).join("");
+}
+
+function initPlayTab() {
+  const greeting = $("play-greeting");
+  if (greeting) greeting.textContent = "Admin";
+  const knockBtn = $("play-knock-btn");
+  knockBtn.textContent = t("btn.knock_all");
+  knockBtn.disabled = false;
+  knockBtn.addEventListener("click", playKnock);
+  const revokeBtn = $("play-revoke-btn");
+  revokeBtn.textContent = t("btn.revoke");
+  revokeBtn.addEventListener("click", playRevoke);
+  $("play-status").textContent = t("knock.never");
+}
+
 function loadPlayerOverview() {
-  refreshPlayTab();
+  refreshPlayState();
+  refreshPlayActive();
 }
 
 // ---- Dashboard boot (called after successful login) ---------------------
 async function bootApp() {
   initTabs();
+  initPlayTab();
   await loadServices();
   // Services tab is active by default — load its data
   refreshStatus();
