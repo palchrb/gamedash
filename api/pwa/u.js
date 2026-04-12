@@ -355,11 +355,22 @@
                 `${t("btn.setup_guide")}</a>`
               );
             }
-            return `<li><div class="li-info"><span>${escapeHtml(s.name)}</span>` +
+            // Desktop path instructions for impostor services
+            const impHelp = (!IS_MOBILE && impostorParams(s))
+              ? `<div class="impostor-help-row">` +
+                `<p>${t("impostor.hint_desktop")}</p>` +
+                `<p class="impostor-path" data-copy="${escapeAttr(t("impostor.path_windows"))}" title="${t("service.click_to_copy")}">${escapeHtml(t("impostor.path_windows"))}</p>` +
+                `<p class="impostor-path" data-copy="${escapeAttr(t("impostor.path_linux"))}" title="${t("service.click_to_copy")}">${escapeHtml(t("impostor.path_linux"))}</p>` +
+                `<p>${t("impostor.hint_desktop_after")}</p>` +
+                `</div>`
+              : "";
+            return `<li${impHelp ? ' class="li-wrap"' : ''}>` +
+              `<div class="li-info"><span>${escapeHtml(s.name)}</span>` +
               `<div class="connect-row">${connectInfo(s)}</div></div>` +
               (actions.length > 0
                 ? `<span class="li-actions">${actions.join(" ")}</span>`
                 : "") +
+              impHelp +
               `</li>`;
           },
         ).join("");
