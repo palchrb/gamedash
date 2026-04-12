@@ -1,5 +1,5 @@
 /**
- * Admin CRUD for per-child knock users.
+ * Admin CRUD for per-player knock users.
  *
  * Plaintext tokens are returned ONLY from POST /api/users and
  * POST /api/users/:id/rotate-token. At all other times we return a
@@ -17,8 +17,10 @@ import {
   findById,
   listUsers,
   openRegistrationWindow,
+  reinstateUser,
   removeKnockCredential,
   rotateToken,
+  suspendUser,
   toPublic,
   updateUser,
 } from "../repos/users";
@@ -118,6 +120,34 @@ export function usersRouter(): Router {
       if (!id) throw new HttpError(400, "missing id");
       const r = await revokeUser(id);
       res.json({ success: true, ...r });
+    }),
+  );
+
+  router.post(
+    "/api/users/:id/suspend",
+    asyncH(async (req, res) => {
+      const id = req.params["id"];
+      if (!id) throw new HttpError(400, "missing id");
+      const user = await findById(id);
+      if (!user) throw new HttpError(404, "user not found");
+      // Revoke active firewall rule so the player is immediately cut off.
+      await revokeUser(id);
+      await suspendUser(id);
+      await audit({ kind: "user.suspend", userId: id, name: user.name });
+      res.json({ success: true });
+    }),
+  );
+
+  router.post(
+    "/api/users/:id/reinstate",
+    asyncH(async (req, res) => {
+      const id = req.params["id"];
+      if (!id) throw new HttpError(400, "missing id");
+      const user = await findById(id);
+      if (!user) throw new HttpError(404, "user not found");
+      await reinstateUser(id);
+      await audit({ kind: "user.reinstate", userId: id, name: user.name });
+      res.json({ success: true });
     }),
   );
 

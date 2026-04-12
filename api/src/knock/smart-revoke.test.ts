@@ -46,6 +46,7 @@ const fakeUser: UserRecord = {
   history: [],
   credentials: [],
   registrationOpenUntil: null,
+  suspended: false,
 };
 
 const fakeRegistry = {

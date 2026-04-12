@@ -79,6 +79,9 @@ export async function knockUser(
   registry: Registry,
   options: KnockOptions = {},
 ): Promise<KnockResult> {
+  if (user.suspended) {
+    throw new Error("Access suspended");
+  }
   const newIps = sanitiseIps(ips);
   if (newIps.length === 0) {
     throw new Error("Invalid or non-public IP address");

@@ -63,6 +63,7 @@
     <!-- Tab navigation -->
     <nav class="tabs">
       <button class="tab active" data-tab="services" data-i18n="tab.services">Services</button>
+      <button class="tab" data-tab="players" data-i18n="tab.players">Players</button>
       <button class="tab" data-tab="management" data-i18n="tab.management">Management</button>
     </nav>
 
@@ -189,31 +190,42 @@
 
     </div>
 
+    <!-- ── Players tab ─────────────────────────────────────────────── -->
+    <div id="tab-players" class="tab-content">
+
+      <!-- Player overview: shows each player's status, IP, services -->
+      <section class="card">
+        <h2 data-i18n="players.title">Players</h2>
+        <p class="card-desc" data-i18n="players.desc">
+          Overview of all players — their access status, active sessions, and knock links.
+        </p>
+        <div class="btn-group" style="margin-bottom:12px">
+          <button onclick="loadPlayerOverview()" class="btn btn-sm" data-i18n="common.refresh">Refresh</button>
+        </div>
+        <ul id="player-overview-list" class="player-overview-list"></ul>
+      </section>
+
+      <!-- Add player (quick-add, same as in management tab) -->
+      <section class="card">
+        <h2 data-i18n="btn.add_user">Add player</h2>
+        <div class="input-group">
+          <input type="text" id="player-tab-name" placeholder="Player name (e.g. Lars)">
+          <button onclick="addPlayerFromTab()" class="btn btn-green" data-i18n="btn.add_user">Add player</button>
+        </div>
+        <div id="player-tab-service-checkboxes" class="service-checkboxes"></div>
+      </section>
+
+    </div>
+
     <!-- ── Management tab ────────────────────────────────────────────── -->
     <div id="tab-management" class="tab-content">
 
-      <!-- Firewall (IP Allowlist) -->
-      <section class="card">
-        <h2 data-i18n="card.firewall">Firewall (IP Allowlist)</h2>
-        <p class="card-desc" data-i18n="firewall.desc">Manage which IPs can connect to the configured game services.</p>
-        <div class="btn-group" style="margin-bottom:12px">
-          <button onclick="allowMyIp()" class="btn btn-green" data-i18n="btn.allow_my_ip">Allow My IP</button>
-          <button onclick="loadFirewallRules()" class="btn btn-sm" data-i18n="common.refresh">Refresh</button>
-        </div>
-        <div class="input-group">
-          <input type="text" id="firewall-ip" data-i18n-placeholder="firewall.placeholder_ip" placeholder="IP address (e.g. 203.0.113.45)">
-          <input type="text" id="firewall-label" data-i18n-placeholder="firewall.placeholder_label" placeholder="Label (optional)" style="max-width:140px">
-          <button onclick="addFirewallIp()" class="btn btn-green" data-i18n="common.add">Add</button>
-        </div>
-        <ul id="firewall-list" class="firewall-list"></ul>
-      </section>
-
-      <!-- Users (per-child knock links) -->
+      <!-- Users (per-player knock links) -->
       <section class="card">
         <h2 data-i18n="card.users">Users</h2>
         <p class="card-desc" data-i18n="users.no_users">Add users below to generate personal knock links.</p>
         <div class="input-group">
-          <input type="text" id="user-name" placeholder="Child's name (e.g. Lars)">
+          <input type="text" id="user-name" placeholder="Player name (e.g. Lars)">
           <button onclick="addUser()" class="btn btn-green" data-i18n="btn.add_user">Add user</button>
         </div>
         <div id="user-service-checkboxes" class="service-checkboxes"></div>
