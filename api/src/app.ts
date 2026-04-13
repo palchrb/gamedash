@@ -39,6 +39,7 @@ import { portalRouter } from "./routes/portal";
 import { publicIpRouter } from "./routes/public-ip";
 import { servicesRouter } from "./routes/services";
 import { statsRouter } from "./routes/stats";
+import { adminsRouter } from "./routes/admins";
 import { usersRouter } from "./routes/users";
 import { trackHttp } from "./metrics";
 
@@ -157,6 +158,7 @@ export function createApp(): Express {
     }),
   );
   app.use("/admin/api", requireAdmin);
+  app.use("/admin", adminsRouter());
   app.use("/admin", servicesRouter());
   app.use("/admin", usersRouter());
   app.use("/admin", directoryRouter());

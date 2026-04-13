@@ -5,6 +5,7 @@
  *   GET  /me                              current session (or 401)
  *   GET  /bootstrap                       {open, expiresAt, minutesRemaining}
  *   POST /bootstrap/start                 creates the first admin record
+ *   GET  /invite/validate?token=…         validate an invite token
  *   POST /webauthn/register/options       options for navigator.credentials.create
  *   POST /webauthn/register/verify        persists the new credential
  *   POST /webauthn/authenticate/options   options for navigator.credentials.get
@@ -21,8 +22,10 @@ import rateLimit from "express-rate-limit";
 import { z } from "zod";
 import { audit } from "../repos/audit";
 import {
+  clearInviteToken,
   createAdmin,
   findAdminById,
+  findAdminByInviteToken,
   hasAnyAdmin,
   loadAdminCredentials,
 } from "../repos/admin";
@@ -60,11 +63,13 @@ const BootstrapBodySchema = z.object({
 
 const RegisterOptionsBodySchema = z.object({
   adminId: z.string().min(1),
+  inviteToken: z.string().min(1).optional(),
 });
 
 const RegisterVerifyBodySchema = z.object({
   adminId: z.string().min(1),
   deviceLabel: z.string().max(64).optional(),
+  inviteToken: z.string().min(1).optional(),
   response: z.unknown(),
 });
 
@@ -131,23 +136,46 @@ export function adminAuthRouter(): Router {
     }),
   );
 
+  // ── invite token validation (unauthenticated) ────────────────────────
+  router.get(
+    "/admin/api/admin/invite/validate",
+    asyncH(async (req, res) => {
+      const token = typeof req.query["token"] === "string" ? req.query["token"] : "";
+      const admin = await findAdminByInviteToken(token);
+      if (!admin) {
+        throw new HttpError(404, "invalid or expired invite");
+      }
+      res.json({
+        success: true,
+        admin: { id: admin.id, name: admin.name },
+      });
+    }),
+  );
+
   // ── registration ─────────────────────────────────────────────────────
   router.post(
     "/admin/api/admin/webauthn/register/options",
     asyncH(async (req, res) => {
       const body = RegisterOptionsBodySchema.parse(req.body);
 
-      // Allow adding new credentials in two distinct contexts:
+      // Allow adding new credentials in three distinct contexts:
       //   1. During the bootstrap window, for the admin just created
       //      by /bootstrap/start (no session yet).
       //   2. For an authenticated admin adding an extra device, once
       //      the system is up and running.
+      //   3. Via a valid invite token, for a newly invited admin.
       const session = await readAndRefreshAdminSession(req, res);
-      if (!session && !isBootstrapOpen()) {
+      const invitedAdmin = body.inviteToken
+        ? await findAdminByInviteToken(body.inviteToken)
+        : null;
+      if (!session && !isBootstrapOpen() && !invitedAdmin) {
         throw new HttpError(401, "login required");
       }
       if (session && session.adminId !== body.adminId) {
         throw new HttpError(403, "cannot register credential for another admin");
+      }
+      if (invitedAdmin && invitedAdmin.id !== body.adminId) {
+        throw new HttpError(403, "invite token does not match admin");
       }
 
       const admin = await findAdminById(body.adminId);
@@ -163,20 +191,30 @@ export function adminAuthRouter(): Router {
       const body = RegisterVerifyBodySchema.parse(req.body);
 
       const session = await readAndRefreshAdminSession(req, res);
+      const invitedAdmin = body.inviteToken
+        ? await findAdminByInviteToken(body.inviteToken)
+        : null;
       const existingAdmins = await loadAdminCredentials();
       const target = existingAdmins.admins.find((a) => a.id === body.adminId);
       if (!target) throw new HttpError(404, "admin not found");
 
       const isFirstCredential = target.credentials.length === 0;
-      if (!session) {
+      if (!session && !invitedAdmin) {
         // Unauthenticated path is only valid during the bootstrap window
         // and only for finishing the very first credential of the first
         // admin.
         if (!isBootstrapOpen() || !isFirstCredential) {
           throw new HttpError(401, "login required");
         }
-      } else if (session.adminId !== body.adminId) {
+      } else if (session && session.adminId !== body.adminId) {
         throw new HttpError(403, "cannot register credential for another admin");
+      } else if (invitedAdmin) {
+        if (invitedAdmin.id !== body.adminId) {
+          throw new HttpError(403, "invite token does not match admin");
+        }
+        if (!isFirstCredential) {
+          throw new HttpError(400, "invite already used — log in instead");
+        }
       }
 
       try {
@@ -189,7 +227,12 @@ export function adminAuthRouter(): Router {
         throw new HttpError(400, (err as Error).message);
       }
 
-      if (isFirstCredential) {
+      if (invitedAdmin) {
+        // Invite used successfully — consume the token, log them in.
+        await clearInviteToken(body.adminId);
+        await issueAdminSession(res, req, body.adminId);
+        await audit({ kind: "admin.invite_accepted", adminId: body.adminId });
+      } else if (isFirstCredential) {
         // First credential is stored → bootstrap window's job is done.
         closeBootstrap();
         await audit({ kind: "admin.bootstrap_complete", adminId: body.adminId });
