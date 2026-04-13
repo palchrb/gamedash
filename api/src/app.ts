@@ -67,10 +67,9 @@ export function createApp(): Express {
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("X-XSS-Protection", "0"); // legacy; CSP is the real defence
-    res.setHeader(
-      "Content-Security-Policy",
-      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'",
-    );
+    // NOTE: a strict CSP (script-src 'self') is not feasible while the
+    // frontend relies on inline onclick="…" handlers (~40 instances).
+    // A future refactor to addEventListener would allow re-enabling it.
     if (c.ADMIN_ORIGIN.startsWith("https://")) {
       res.setHeader(
         "Strict-Transport-Security",
