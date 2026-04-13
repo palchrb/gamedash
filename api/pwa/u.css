@@ -277,6 +277,13 @@ li.li-wrap { flex-wrap: wrap; }
 .dot.yellow { background: var(--warn); }
 .dot.gray { background: var(--muted); }
 
+.svc-summary { list-style: none; padding: 0; margin: 0 0 4px; }
+.svc-summary-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; padding: 6px 0; }
+.svc-summary-item > span:last-of-type { font-size: 13px; color: var(--accent); font-weight: 600; }
+.svc-summary-names { width: 100%; font-size: 13px; color: var(--muted); padding-left: 15px; }
+.svc-players { font-style: italic; }
+.active-divider { border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 8px 0; }
+
 .week-bars {
   display: flex;
   align-items: flex-end;

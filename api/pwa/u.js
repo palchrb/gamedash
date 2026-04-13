@@ -427,7 +427,39 @@
         activeList.innerHTML = `<li class="muted">${t("common.unknown")}</li>`;
         return;
       }
-      activeList.innerHTML = data.sessions
+
+      // ── Per-service summary: aggregate player counts + names ──
+      const svcMap = {};
+      for (const s of data.sessions) {
+        for (const sv of s.services) {
+          if (!svcMap[sv.id]) svcMap[sv.id] = { name: sv.name, players: [], connected: 0 };
+          // playerNames comes from RCON (Minecraft) — use if available
+          if (sv.playerNames && sv.playerNames.length > 0) {
+            for (const p of sv.playerNames) {
+              if (!svcMap[sv.id].players.includes(p)) svcMap[sv.id].players.push(p);
+            }
+          }
+          if (sv.connected) svcMap[sv.id].connected++;
+        }
+      }
+
+      const svcSummary = Object.values(svcMap)
+        .filter((sv) => sv.players.length > 0 || sv.connected > 0)
+        .map((sv) => {
+          const count = sv.players.length || sv.connected;
+          const names = sv.players.length > 0
+            ? `<span class="svc-players">${sv.players.map(escapeHtml).join(", ")}</span>`
+            : "";
+          return `<li class="svc-summary-item">
+            <span><span class="dot green"></span><strong>${escapeHtml(sv.name)}</strong></span>
+            <span>${count} online</span>
+            ${names ? `<div class="svc-summary-names">${names}</div>` : ""}
+          </li>`;
+        })
+        .join("");
+
+      // ── Per-user list (existing) ──
+      const userList = data.sessions
         .map((s) => {
           const ips = Array.isArray(s.ips) ? s.ips : (s.ip ? [s.ip] : []);
           const playing = s.services.find((sv) => sv.connected);
@@ -444,6 +476,10 @@
             <span class="muted">${escapeHtml(txt)}</span></li>`;
         })
         .join("");
+
+      activeList.innerHTML =
+        (svcSummary ? `<div class="svc-summary">${svcSummary}</div><hr class="active-divider">` : "") +
+        userList;
     } catch (err) {
       console.error("refreshActive failed:", err);
     }
