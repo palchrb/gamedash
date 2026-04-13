@@ -13,6 +13,7 @@
  * touches the credentials file.
  */
 
+import * as crypto from "node:crypto";
 import { config } from "../config";
 import { readJson, withLock, writeJson } from "../lib/atomic-file";
 import { sha256Hex } from "../lib/hash";
@@ -75,7 +76,7 @@ export async function hasAnyAdmin(): Promise<boolean> {
 export async function createAdmin(name: string): Promise<AdminRecord> {
   return mutateAdminCredentials((draft) => {
     const now = new Date().toISOString();
-    const id = `a_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const id = `a_${Date.now().toString(36)}_${crypto.randomBytes(6).toString("hex")}`;
     const record: AdminRecord = {
       id,
       name,

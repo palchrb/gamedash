@@ -229,31 +229,32 @@ export async function revokeUser(userId: string): Promise<{ removed: boolean; ip
 /** Periodic sweep to remove expired firewall rules. */
 export async function sweepExpiredRules(): Promise<number> {
   const now = Date.now();
-  let expiredCount = 0;
-  const toRemove: FirewallRule[] = [];
-  await mutateRules((draft) => {
+  // UFW deletions run inside the same mutex that removes the rules from
+  // the JSON file so a crash between the two cannot leave orphaned UFW
+  // rules on the host.
+  return mutateRules(async (draft) => {
     const remaining: FirewallRule[] = [];
+    const expired: FirewallRule[] = [];
     for (const rule of draft.rules) {
       if (rule.expiresAt && new Date(rule.expiresAt).getTime() < now) {
-        toRemove.push(rule);
+        expired.push(rule);
       } else {
         remaining.push(rule);
       }
     }
     draft.rules = remaining;
-    expiredCount = toRemove.length;
-  });
-  for (const rule of toRemove) {
-    try {
-      await ufwDeleteMany(rule.ips, flattenPorts(rule));
-    } catch {
-      // logged inside
+    for (const rule of expired) {
+      try {
+        await ufwDeleteMany(rule.ips, flattenPorts(rule));
+      } catch {
+        // logged inside ufwDeleteMany
+      }
+      await audit({
+        kind: "knock.auto_expire",
+        userId: rule.userId ?? null,
+        ips: rule.ips,
+      });
     }
-    await audit({
-      kind: "knock.auto_expire",
-      userId: rule.userId ?? null,
-      ips: rule.ips,
-    });
-  }
-  return expiredCount;
+    return expired.length;
+  });
 }

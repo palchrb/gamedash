@@ -369,7 +369,7 @@ let pollTimer = null;
 
 function startPolling() {
   if (pollTimer) return;
-  pollTimer = setInterval(poll, 10000);
+  pollTimer = setInterval(poll, 15000);
 }
 function stopPolling() {
   if (pollTimer) {
