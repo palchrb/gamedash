@@ -780,25 +780,6 @@ async function addUser() {
   }
 }
 
-async function rotateUserToken(id, name) {
-  if (!confirm(t("users.rotate_confirm", { name }))) return;
-  const data = await api(`/admin/api/users/${id}/rotate-token`, { method: "POST" });
-  if (data && data.success) {
-    const url = `${window.location.origin}/u/${data.token}`;
-    try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
-    prompt(t("users.rotate_done", { name }), url);
-  }
-}
-
-async function deleteUser(id, name) {
-  if (!confirm(`${t("common.delete")} ${name}?`)) return;
-  const data = await api(`/admin/api/users/${id}`, { method: "DELETE" });
-  if (data && data.success) {
-    toast(t("users.deleted", { name }), "success");
-    loadDirectory();
-  }
-}
-
 async function copyKnockLink(url) {
   try {
     await navigator.clipboard.writeText(url);
@@ -874,17 +855,10 @@ async function loadDirectory() {
           ? escapeHtml(names.join(", "))
           : `<span class="muted">${t("directory.edit_services_none")}</span>`;
       }
-      // Actions column for knock users: edit services, new link, revoke, suspend, delete.
+      // Actions column for knock users: single "Manage" button opens modal.
       let actionsCell = `<span class="muted">—</span>`;
       if (e.kind === "knock") {
-        const editBtn = `<button class="btn btn-sm" onclick="openEditServicesModal('${escapeAttr(e.id)}')">${t("directory.edit_services")}</button>`;
-        const linkBtn = `<button class="btn btn-sm" onclick="rotateUserToken('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("btn.new_link")}</button>`;
-        const revokeBtn = `<button class="btn btn-sm btn-red" onclick="revokeUserIp('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("btn.revoke")}</button>`;
-        const suspendBtn = e.suspended
-          ? `<button class="btn btn-sm btn-green" onclick="reinstatePlayer('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("btn.reinstate")}</button>`
-          : `<button class="btn btn-sm btn-red" onclick="suspendPlayer('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("btn.suspend")}</button>`;
-        const deleteBtn = `<button class="btn btn-sm btn-red" onclick="deleteUser('${escapeAttr(e.id)}','${escapeAttr(e.name)}')">${t("common.delete")}</button>`;
-        actionsCell = `<div class="btn-group-inline">${editBtn}${linkBtn}${revokeBtn}${suspendBtn}${deleteBtn}</div>`;
+        actionsCell = `<button class="btn btn-sm" onclick="openManageModal('${escapeAttr(e.id)}')">${t("directory.manage")}</button>`;
       }
       return `<tr>
         <td><strong>${escapeHtml(e.name)}</strong></td>
@@ -899,49 +873,22 @@ async function loadDirectory() {
     .join("");
 }
 
-// ---- Directory actions: revoke IP, suspend, reinstate --------------------
-async function revokeUserIp(userId, name) {
-  if (!confirm(t("users.revoke_confirm", { name }))) return;
-  const data = await api(`/admin/api/users/${userId}/revoke`, { method: "POST" });
-  if (data && data.success) {
-    toast(t("users.revoked", { name }), "success");
-    loadDirectory();
-    loadUsers();
-  }
-}
+// ---- Manage player modal -------------------------------------------------
+let MANAGE_USER_ID = null;
+let MANAGE_USER_NAME = null;
 
-async function suspendPlayer(userId, name) {
-  if (!confirm(t("directory.suspend_confirm", { name }))) return;
-  const data = await api(`/admin/api/users/${userId}/suspend`, { method: "POST" });
-  if (data && data.success) {
-    toast(t("directory.suspended_done", { name }), "success");
-    loadDirectory();
-    loadUsers();
-  }
-}
-
-async function reinstatePlayer(userId, name) {
-  if (!confirm(t("directory.reinstate_confirm", { name }))) return;
-  const data = await api(`/admin/api/users/${userId}/reinstate`, { method: "POST" });
-  if (data && data.success) {
-    toast(t("directory.reinstated_done", { name }), "success");
-    loadDirectory();
-    loadUsers();
-  }
-}
-
-// ---- Edit services modal -------------------------------------------------
-let EDIT_SERVICES_USER_ID = null;
-
-function openEditServicesModal(userId) {
+function openManageModal(userId) {
   const entry = DIRECTORY_ENTRIES.find((e) => e.id === userId && e.kind === "knock");
   if (!entry) {
     toast(t("common.error"), "error");
     return;
   }
-  EDIT_SERVICES_USER_ID = userId;
-  document.getElementById("edit-services-user-name").textContent = entry.name;
-  const wrap = document.getElementById("edit-services-checkboxes");
+  MANAGE_USER_ID = userId;
+  MANAGE_USER_NAME = entry.name;
+  document.getElementById("manage-modal-name").textContent = entry.name;
+
+  // Populate service checkboxes
+  const wrap = document.getElementById("manage-services-checkboxes");
   const current = new Set(entry.allowedServices || []);
   wrap.innerHTML = SERVICES.map((s) => {
     const checked = current.has(s.id) ? "checked" : "";
@@ -949,23 +896,36 @@ function openEditServicesModal(userId) {
       <input type="checkbox" value="${escapeAttr(s.id)}" ${checked}> ${escapeHtml(s.name)}
     </label>`;
   }).join(" ");
-  document.getElementById("edit-services-modal").classList.remove("hidden");
+
+  // Suspend / reinstate button
+  const suspBtn = document.getElementById("manage-suspend-btn");
+  if (entry.suspended) {
+    suspBtn.textContent = t("btn.reinstate");
+    suspBtn.className = "btn btn-sm btn-green";
+    suspBtn.onclick = manageReinstate;
+  } else {
+    suspBtn.textContent = t("btn.suspend");
+    suspBtn.className = "btn btn-sm btn-red";
+    suspBtn.onclick = manageSuspend;
+  }
+
+  document.getElementById("manage-modal").classList.remove("hidden");
 }
 
-function closeEditServicesModal() {
-  EDIT_SERVICES_USER_ID = null;
-  document.getElementById("edit-services-modal").classList.add("hidden");
+function closeManageModal() {
+  MANAGE_USER_ID = null;
+  MANAGE_USER_NAME = null;
+  document.getElementById("manage-modal").classList.add("hidden");
 }
 
-async function saveEditServices() {
-  if (!EDIT_SERVICES_USER_ID) return;
-  const userId = EDIT_SERVICES_USER_ID;
+async function saveManageServices() {
+  if (!MANAGE_USER_ID) return;
   const boxes = document.querySelectorAll(
-    "#edit-services-checkboxes input[type=checkbox]",
+    "#manage-services-checkboxes input[type=checkbox]",
   );
   const allowedServices = [];
   for (const cb of boxes) if (cb.checked) allowedServices.push(cb.value);
-  const data = await api(`/admin/api/users/${userId}`, {
+  const data = await api(`/admin/api/users/${MANAGE_USER_ID}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ allowedServices }),
@@ -973,11 +933,63 @@ async function saveEditServices() {
   if (data && data.success) {
     const name = (data.user && data.user.name) || "";
     toast(t("directory.edit_services_saved", { name }), "success");
-    closeEditServicesModal();
     loadDirectory();
-    loadUsers();
   } else if (data) {
     toast(data.error || "Failed", "error");
+  }
+}
+
+async function manageNewLink() {
+  if (!MANAGE_USER_ID) return;
+  if (!confirm(t("users.rotate_confirm", { name: MANAGE_USER_NAME }))) return;
+  const data = await api(`/admin/api/users/${MANAGE_USER_ID}/rotate-token`, { method: "POST" });
+  if (data && data.success) {
+    const url = `${window.location.origin}/u/${data.token}`;
+    try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
+    prompt(t("users.rotate_done", { name: MANAGE_USER_NAME }), url);
+  }
+}
+
+async function manageRevoke() {
+  if (!MANAGE_USER_ID) return;
+  if (!confirm(t("users.revoke_confirm", { name: MANAGE_USER_NAME }))) return;
+  const data = await api(`/admin/api/users/${MANAGE_USER_ID}/revoke`, { method: "POST" });
+  if (data && data.success) {
+    toast(t("users.revoked", { name: MANAGE_USER_NAME }), "success");
+    loadDirectory();
+  }
+}
+
+async function manageSuspend() {
+  if (!MANAGE_USER_ID) return;
+  if (!confirm(t("directory.suspend_confirm", { name: MANAGE_USER_NAME }))) return;
+  const data = await api(`/admin/api/users/${MANAGE_USER_ID}/suspend`, { method: "POST" });
+  if (data && data.success) {
+    toast(t("directory.suspended_done", { name: MANAGE_USER_NAME }), "success");
+    closeManageModal();
+    loadDirectory();
+  }
+}
+
+async function manageReinstate() {
+  if (!MANAGE_USER_ID) return;
+  if (!confirm(t("directory.reinstate_confirm", { name: MANAGE_USER_NAME }))) return;
+  const data = await api(`/admin/api/users/${MANAGE_USER_ID}/reinstate`, { method: "POST" });
+  if (data && data.success) {
+    toast(t("directory.reinstated_done", { name: MANAGE_USER_NAME }), "success");
+    closeManageModal();
+    loadDirectory();
+  }
+}
+
+async function manageDelete() {
+  if (!MANAGE_USER_ID) return;
+  if (!confirm(`${t("common.delete")} ${MANAGE_USER_NAME}?`)) return;
+  const data = await api(`/admin/api/users/${MANAGE_USER_ID}`, { method: "DELETE" });
+  if (data && data.success) {
+    toast(t("users.deleted", { name: MANAGE_USER_NAME }), "success");
+    closeManageModal();
+    loadDirectory();
   }
 }
 
@@ -1003,8 +1015,9 @@ async function loadActiveSessions() {
         label = t("active.idle_unallowed");
       }
       const ipText = ips.length > 0 ? ` · ${escapeHtml(ips.join(", "))}` : "";
+      const roleBadge = s.role === "admin" ? ` <span class="badge badge-ok" style="font-size:0.7rem;padding:1px 6px">${t("directory.role_admin")}</span>` : "";
       return `<li class="firewall-item">
-        <span><strong>${escapeHtml(s.name)}</strong>
+        <span><strong>${escapeHtml(s.name)}</strong>${roleBadge}
           <span class="firewall-meta">${escapeHtml(label)}${ipText}</span>
         </span>
       </li>`;

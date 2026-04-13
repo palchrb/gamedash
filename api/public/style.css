@@ -442,6 +442,21 @@ h3 {
   gap: 10px 14px;
   margin: 4px 0 0;
 }
+.modal-box h4 {
+  margin: 0 0 6px;
+  font-size: 0.9rem;
+  color: #9aa0c0;
+}
+.modal-divider {
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.08);
+  margin: 16px 0;
+}
+.manage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 
 .auth-overlay {
   position: fixed;

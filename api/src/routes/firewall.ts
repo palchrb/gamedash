@@ -21,6 +21,7 @@ import {
 import { ufwAllowMany, ufwDeleteMany } from "../firewall/ufw";
 import { listAllConnections } from "../firewall/connections";
 import { listUsers } from "../repos/users";
+import { loadAdminCredentials } from "../repos/admin";
 import { registry } from "../services/registry";
 
 const firewallLimiter = rateLimit({
@@ -139,7 +140,20 @@ export function firewallRouter(): Router {
         }
       }
 
-      const sessions = users.map((u) => {
+      const sessions: Array<{
+        userId: string;
+        name: string;
+        role: "admin" | "player";
+        ips: string[];
+        ipExpiresAt: string | null;
+        services: Array<{
+          id: string;
+          name: string;
+          connected: boolean;
+          playerNames: string[];
+        }>;
+        suspended: boolean;
+      }> = users.map((u) => {
         const rule = fw.rules.find((r) => r.userId === u.id);
         const ips = rule?.ips ?? [];
         // Merge live port/proto keys across every IP in the rule — a
@@ -164,12 +178,54 @@ export function firewallRouter(): Router {
         return {
           userId: u.id,
           name: u.name,
+          role: "player" as const,
           ips,
           ipExpiresAt: rule?.expiresAt ?? null,
           services,
           suspended: u.suspended ?? false,
         };
       });
+
+      // Include admin firewall rules (rules without a userId).
+      const userRuleIds = new Set(users.map((u) => u.id));
+      const adminRules = fw.rules.filter(
+        (r) => !r.userId || !userRuleIds.has(r.userId),
+      );
+      // Only include rules that look like admin knock rules (no userId).
+      const adminFile = await loadAdminCredentials();
+      const adminNameMap = new Map(
+        adminFile.admins.map((a) => [a.id, a.name]),
+      );
+      for (const rule of adminRules) {
+        if (rule.userId) continue; // skip orphan player rules
+        const ips = rule.ips ?? [];
+        const live = new Set<string>();
+        for (const ip of ips) {
+          const perIp = liveByIp.get(ip);
+          if (perIp) for (const key of perIp) live.add(key);
+        }
+        const allSvcIds = registry().list().map((s) => s.id);
+        const services = allSvcIds.map((sid) => {
+          const adapter = registry().get(sid);
+          const ports = adapter?.ports ?? [];
+          const connected = ports.some((p) => live.has(`${p.port}/${p.proto}`));
+          return {
+            id: sid,
+            name: adapter?.name ?? sid,
+            connected,
+            playerNames: playersByService[sid] ?? [],
+          };
+        });
+        sessions.push({
+          userId: "",
+          name: rule.label || "Admin",
+          role: "admin" as const,
+          ips,
+          ipExpiresAt: rule.expiresAt ?? null,
+          services,
+          suspended: false,
+        });
+      }
 
       res.json({ success: true, sessions });
     }),

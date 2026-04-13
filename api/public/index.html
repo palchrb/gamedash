@@ -285,15 +285,31 @@
     <!-- Notification area -->
     <div id="toast" class="toast"></div>
 
-    <!-- Edit services modal — shown from the Directory row action. -->
-    <div id="edit-services-modal" class="modal hidden" role="dialog" aria-modal="true">
+    <!-- Manage player modal — opened from Directory "Manage" button. -->
+    <div id="manage-modal" class="modal hidden" role="dialog" aria-modal="true">
       <div class="modal-box">
-        <h3 data-i18n="directory.edit_services_title">Edit allowed services</h3>
-        <p class="card-desc" id="edit-services-user-name">…</p>
-        <div id="edit-services-checkboxes" class="service-checkboxes"></div>
+        <h3 id="manage-modal-title" data-i18n="directory.manage_title">Manage player</h3>
+        <p class="card-desc" id="manage-modal-name">…</p>
+
+        <!-- Allowed services -->
+        <h4 data-i18n="directory.edit_services_title">Edit allowed services</h4>
+        <div id="manage-services-checkboxes" class="service-checkboxes"></div>
+        <div class="btn-group" style="margin-top:10px">
+          <button class="btn btn-green btn-sm" onclick="saveManageServices()" data-i18n="common.save">Save</button>
+        </div>
+
+        <hr class="modal-divider">
+
+        <!-- Actions -->
+        <div class="manage-actions">
+          <button class="btn btn-sm" onclick="manageNewLink()" data-i18n="btn.new_link">New link</button>
+          <button class="btn btn-sm btn-red" id="manage-revoke-btn" onclick="manageRevoke()" data-i18n="btn.revoke">Revoke</button>
+          <button class="btn btn-sm" id="manage-suspend-btn" onclick="manageSuspend()">…</button>
+          <button class="btn btn-sm btn-red" onclick="manageDelete()" data-i18n="common.delete">Delete</button>
+        </div>
+
         <div class="btn-group" style="justify-content:flex-end;margin-top:16px">
-          <button class="btn" onclick="closeEditServicesModal()" data-i18n="common.cancel">Cancel</button>
-          <button class="btn btn-green" onclick="saveEditServices()" data-i18n="common.save">Save</button>
+          <button class="btn" onclick="closeManageModal()" data-i18n="common.cancel">Close</button>
         </div>
       </div>
     </div>
