@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#1a1a2e">
+  <link rel="icon" type="image/svg+xml" href="icon.svg">
+  <title>Gamedash — Admin Invite</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="auth-overlay" style="display:flex">
+    <div class="auth-card">
+      <h1 class="auth-title">Gamedash</h1>
+      <p id="msg" class="auth-msg"></p>
+
+      <div id="invite-section" class="auth-section hidden">
+        <h2 id="welcome"></h2>
+        <p class="card-desc">Register a passkey to complete your admin account setup.</p>
+        <button id="register-btn" class="btn btn-green">Register passkey</button>
+      </div>
+
+      <div id="error-section" class="auth-section hidden">
+        <h2>Invalid invite</h2>
+        <p class="card-desc">This invite link is invalid or has already been used. Ask an existing admin to create a new invite.</p>
+      </div>
+
+      <div id="success-section" class="auth-section hidden">
+        <h2>You're in!</h2>
+        <p class="card-desc">Passkey registered. Redirecting to the dashboard...</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="webauthn.js"></script>
+  <script>
+    (async function () {
+      const params = new URLSearchParams(location.search);
+      const token = params.get("token");
+      const msgEl = document.getElementById("msg");
+      const inviteSection = document.getElementById("invite-section");
+      const errorSection = document.getElementById("error-section");
+      const successSection = document.getElementById("success-section");
+      const welcomeEl = document.getElementById("welcome");
+      const registerBtn = document.getElementById("register-btn");
+
+      function showError(text) {
+        msgEl.textContent = text;
+        msgEl.classList.add("error");
+        errorSection.classList.remove("hidden");
+      }
+
+      if (!token) {
+        showError("No invite token provided.");
+        return;
+      }
+
+      // Validate the invite token
+      msgEl.textContent = "Validating invite...";
+      let adminId, adminName;
+      try {
+        const r = await fetch("/admin/api/admin/invite/validate?token=" + encodeURIComponent(token));
+        const data = await r.json();
+        if (!r.ok || !data.success) {
+          showError(data.error || "Invalid invite.");
+          return;
+        }
+        adminId = data.admin.id;
+        adminName = data.admin.name;
+      } catch {
+        showError("Failed to validate invite. Please try again.");
+        return;
+      }
+
+      msgEl.textContent = "";
+      welcomeEl.textContent = "Welcome, " + adminName;
+      inviteSection.classList.remove("hidden");
+
+      registerBtn.addEventListener("click", async () => {
+        registerBtn.disabled = true;
+        msgEl.textContent = "Starting passkey registration...";
+        msgEl.classList.remove("error");
+
+        try {
+          // Get registration options
+          const optsRes = await fetch("/admin/api/admin/webauthn/register/options", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ adminId, inviteToken: token }),
+          });
+          const optsData = await optsRes.json();
+          if (!optsRes.ok || !optsData.success) throw new Error(optsData.error || "Failed to get options");
+
+          // Browser WebAuthn ceremony
+          msgEl.textContent = "Follow your browser's passkey prompt...";
+          const att = await webauthnRegister(optsData.options);
+
+          // Verify with server
+          msgEl.textContent = "Verifying...";
+          const verifyRes = await fetch("/admin/api/admin/webauthn/register/verify", {
+            method: "POST",
+            credentials: "same-origin",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              adminId,
+              inviteToken: token,
+              response: att,
+              deviceLabel: navigator.userAgent.slice(0, 60),
+            }),
+          });
+          const verifyData = await verifyRes.json();
+          if (!verifyRes.ok || !verifyData.success) throw new Error(verifyData.error || "Verification failed");
+
+          // Success — redirect to dashboard
+          inviteSection.classList.add("hidden");
+          successSection.classList.remove("hidden");
+          msgEl.textContent = "";
+          setTimeout(() => { location.href = "/admin/"; }, 1500);
+        } catch (err) {
+          msgEl.textContent = err.message;
+          msgEl.classList.add("error");
+          registerBtn.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>

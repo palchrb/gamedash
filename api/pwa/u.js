@@ -676,8 +676,7 @@
       }
     });
 
-    setInterval(refreshState, STATE_REFRESH_MS);
-    setInterval(refreshActive, STATE_REFRESH_MS);
+    setInterval(() => { refreshState(); refreshActive(); }, STATE_REFRESH_MS);
 
     refreshState();
     refreshActive();

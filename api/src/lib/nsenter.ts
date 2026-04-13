@@ -27,15 +27,15 @@ async function sidecarFetch(
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 15_000);
   try {
+    const headers: Record<string, string> = {};
+    const token = config().UFW_SIDECAR_TOKEN;
+    if (token) headers["x-sidecar-token"] = token;
+    if (opts.body) headers["Content-Type"] = "application/json";
     const res = await fetch(url, {
       method: opts.method ?? "GET",
       signal: controller.signal,
-      ...(opts.body
-        ? {
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(opts.body),
-          }
-        : {}),
+      headers,
+      ...(opts.body ? { body: JSON.stringify(opts.body) } : {}),
     });
     const data = (await res.json()) as SidecarResponse;
     if (!res.ok || !data.success) {

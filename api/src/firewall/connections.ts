@@ -22,6 +22,14 @@ export interface LiveConnection {
   proto: "tcp" | "udp";
 }
 
+// ── Short-lived cache for kernel connection queries ───────────────────
+// Multiple callers (stats collector, active-sessions endpoint, knock PWA)
+// can hit listAllConnections() within the same few seconds. The kernel
+// state doesn't change meaningfully within a 5-second window, so we
+// cache the raw (unfiltered) result and reuse it.
+const CONN_CACHE_TTL_MS = 5_000;
+let _connCache: { data: LiveConnection[]; expiresAt: number } | null = null;
+
 export async function listEstablishedTcp(): Promise<LiveConnection[]> {
   const stdout = await sidecarTcpConnections();
   if (!stdout) return [];
@@ -60,9 +68,9 @@ export async function listUdpFlows(): Promise<LiveConnection[]> {
   return out;
 }
 
-export async function listAllConnections(
-  filterPorts?: readonly PortSpec[],
-): Promise<LiveConnection[]> {
+async function fetchAllConnections(): Promise<LiveConnection[]> {
+  const now = Date.now();
+  if (_connCache && _connCache.expiresAt > now) return _connCache.data;
   const [tcp, udp] = await Promise.all([
     listEstablishedTcp().catch((err: Error) => {
       logger().warn({ err: err.message }, "ss query failed");
@@ -73,7 +81,15 @@ export async function listAllConnections(
       return [] as LiveConnection[];
     }),
   ]);
-  const all = [...tcp, ...udp];
+  const data = [...tcp, ...udp];
+  _connCache = { data, expiresAt: now + CONN_CACHE_TTL_MS };
+  return data;
+}
+
+export async function listAllConnections(
+  filterPorts?: readonly PortSpec[],
+): Promise<LiveConnection[]> {
+  const all = await fetchAllConnections();
   if (!filterPorts || filterPorts.length === 0) return all;
   const wanted = new Set(filterPorts.map((p) => `${p.port}/${p.proto}`));
   return all.filter((c) => wanted.has(`${c.dstPort}/${c.proto}`));

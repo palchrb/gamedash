@@ -39,6 +39,7 @@ import { portalRouter } from "./routes/portal";
 import { publicIpRouter } from "./routes/public-ip";
 import { servicesRouter } from "./routes/services";
 import { statsRouter } from "./routes/stats";
+import { adminsRouter } from "./routes/admins";
 import { usersRouter } from "./routes/users";
 import { trackHttp } from "./metrics";
 
@@ -66,6 +67,10 @@ export function createApp(): Express {
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
     res.setHeader("X-XSS-Protection", "0"); // legacy; CSP is the real defence
+    res.setHeader(
+      "Content-Security-Policy",
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; font-src 'self'; frame-ancestors 'none'",
+    );
     if (c.ADMIN_ORIGIN.startsWith("https://")) {
       res.setHeader(
         "Strict-Transport-Security",
@@ -153,6 +158,7 @@ export function createApp(): Express {
     }),
   );
   app.use("/admin/api", requireAdmin);
+  app.use("/admin", adminsRouter());
   app.use("/admin", servicesRouter());
   app.use("/admin", usersRouter());
   app.use("/admin", directoryRouter());

@@ -54,6 +54,7 @@ const ConfigSchema = z.object({
 
   // ── UFW sidecar ───────────────────────────────────────────────────────
   UFW_SIDECAR_URL: z.string().default("http://ufw-sidecar:9090"),
+  UFW_SIDECAR_TOKEN: z.string().optional(),
 
   // ── Admin passkey auth (Phase 1) ───────────────────────────────────────
   ADMIN_RP_ID: z.string().default("localhost"),

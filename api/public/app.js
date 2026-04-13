@@ -28,6 +28,8 @@ async function checkSessionOrLogin() {
   try {
     const r = await fetch("/admin/api/admin/me", { credentials: "same-origin" });
     if (r.ok) {
+      const me = await r.json();
+      if (me.admin) CURRENT_ADMIN_ID = me.admin.id;
       hideAuth();
       bootApp();
       return;
@@ -177,6 +179,7 @@ function initTabs() {
       if (tab === "management") {
         loadUsers();
         loadDirectory();
+        loadAdmins();
         loadActiveSessions();
         loadStatsLeaderboard();
       }
@@ -369,7 +372,7 @@ let pollTimer = null;
 
 function startPolling() {
   if (pollTimer) return;
-  pollTimer = setInterval(poll, 10000);
+  pollTimer = setInterval(poll, 15000);
 }
 function stopPolling() {
   if (pollTimer) {
@@ -1316,6 +1319,66 @@ async function bootApp() {
   if (caps.includes("worlds")) loadWorlds();
   if (caps.includes("backup")) listBackups();
   startPolling();
+}
+
+// ---- Admin management -----------------------------------------------------
+let CURRENT_ADMIN_ID = null; // set after login from /me response
+
+async function loadAdmins() {
+  const data = await api("/admin/api/admins");
+  const list = document.getElementById("admin-list");
+  if (!list) return;
+  if (!data || !data.admins || data.admins.length === 0) {
+    list.innerHTML = "<li class=\"muted\">No admins found</li>";
+    return;
+  }
+  list.innerHTML = data.admins.map((a) => {
+    const keys = a.credentialCount === 1 ? "1 passkey" : `${a.credentialCount} passkeys`;
+    const pending = a.credentialCount === 0
+      ? ' <span class="badge badge-warn">invite pending</span>'
+      : "";
+    const isSelf = a.id === CURRENT_ADMIN_ID;
+    const deleteBtn = isSelf
+      ? ""
+      : ` <button onclick="deleteAdmin('${escapeAttr(a.id)}','${escapeAttr(a.name)}')" class="btn btn-sm btn-red">Remove</button>`;
+    return `<li class="firewall-item">
+      <span><strong>${escapeHtml(a.name)}</strong> <span class="muted">${keys}</span>${pending}</span>
+      <span>${deleteBtn}</span>
+    </li>`;
+  }).join("");
+}
+
+async function inviteAdmin() {
+  const input = document.getElementById("invite-admin-name");
+  const name = input.value.trim();
+  if (!name) return toast("Enter a name for the new admin", "error");
+  const data = await api("/admin/api/admins", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (data && data.success) {
+    input.value = "";
+    try { await navigator.clipboard.writeText(data.inviteUrl); } catch { /* ignore */ }
+    prompt("Invite link (copied to clipboard) — share with the new admin:", data.inviteUrl);
+    loadAdmins();
+  } else if (data) {
+    toast(data.error || "Failed to create invite", "error");
+  }
+}
+
+async function deleteAdmin(id, name) {
+  if (!confirm(`Remove admin "${name}"? They will lose access immediately.`)) return;
+  const data = await api(`/admin/api/admins/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (data && data.success) {
+    toast(`Admin "${name}" removed`, "success");
+    loadAdmins();
+    loadDirectory();
+  } else if (data) {
+    toast(data.error || "Failed", "error");
+  }
 }
 
 // ---- Entry point ---------------------------------------------------------

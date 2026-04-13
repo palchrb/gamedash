@@ -37,6 +37,9 @@ services:
 
       # UFW sidecar: the dashboard calls this URL for firewall operations.
       UFW_SIDECAR_URL: "http://ufw-sidecar:9090"
+      # Optional shared secret — when set, the sidecar rejects requests
+      # without a matching x-sidecar-token header (defense in depth).
+      UFW_SIDECAR_TOKEN: "${UFW_SIDECAR_TOKEN:-}"
 
       # Point the docker CLI at the scoped proxy instead of the real
       # socket. The proxy whitelists only the four endpoints gamedash
@@ -115,6 +118,8 @@ services:
     # build: ./sidecar
     container_name: ufw-sidecar
     restart: unless-stopped
+    environment:
+      SIDECAR_TOKEN: "${UFW_SIDECAR_TOKEN:-}"
     pid: host
     privileged: true
     # The sidecar uses nsenter -t 1 to run ufw / ss / conntrack from

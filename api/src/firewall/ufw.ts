@@ -32,34 +32,40 @@ export async function ufwAllowMany(
   ips: readonly string[],
   ports: readonly PortSpec[],
 ): Promise<UfwError[]> {
-  const errors: UfwError[] = [];
-  for (const ip of ips) {
-    for (const { port, proto } of ports) {
-      try {
-        await ufwAllow(ip, port, proto);
-      } catch (err) {
-        errors.push({ ip, port, proto, error: (err as Error).message });
-        logger().warn({ ip, port, proto, err: (err as Error).message }, "ufw allow failed");
-      }
-    }
-  }
-  return errors;
+  const results = await Promise.allSettled(
+    ips.flatMap((ip) =>
+      ports.map(async ({ port, proto }) => {
+        try {
+          await ufwAllow(ip, port, proto);
+        } catch (err) {
+          logger().warn({ ip, port, proto, err: (err as Error).message }, "ufw allow failed");
+          throw { ip, port, proto, error: (err as Error).message };
+        }
+      }),
+    ),
+  );
+  return results
+    .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+    .map((r) => r.reason as UfwError);
 }
 
 export async function ufwDeleteMany(
   ips: readonly string[],
   ports: readonly PortSpec[],
 ): Promise<UfwError[]> {
-  const errors: UfwError[] = [];
-  for (const ip of ips) {
-    for (const { port, proto } of ports) {
-      try {
-        await ufwDelete(ip, port, proto);
-      } catch (err) {
-        errors.push({ ip, port, proto, error: (err as Error).message });
-        logger().warn({ ip, port, proto, err: (err as Error).message }, "ufw delete failed");
-      }
-    }
-  }
-  return errors;
+  const results = await Promise.allSettled(
+    ips.flatMap((ip) =>
+      ports.map(async ({ port, proto }) => {
+        try {
+          await ufwDelete(ip, port, proto);
+        } catch (err) {
+          logger().warn({ ip, port, proto, err: (err as Error).message }, "ufw delete failed");
+          throw { ip, port, proto, error: (err as Error).message };
+        }
+      }),
+    ),
+  );
+  return results
+    .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+    .map((r) => r.reason as UfwError);
 }

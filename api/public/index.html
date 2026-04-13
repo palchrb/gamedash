@@ -228,6 +228,17 @@
     <!-- ── Management tab ────────────────────────────────────────────── -->
     <div id="tab-management" class="tab-content">
 
+      <!-- Admin management -->
+      <section class="card">
+        <h2>Admins</h2>
+        <p class="card-desc">Manage admin accounts. Invite new admins by generating a one-time invite link.</p>
+        <div class="input-group">
+          <input type="text" id="invite-admin-name" placeholder="New admin name">
+          <button onclick="inviteAdmin()" class="btn btn-green">Invite admin</button>
+        </div>
+        <ul id="admin-list" class="firewall-list"></ul>
+      </section>
+
       <!-- Add new player -->
       <section class="card">
         <h2 data-i18n="btn.add_user">Add player</h2>

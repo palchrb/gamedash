@@ -13,9 +13,10 @@
  * touches the credentials file.
  */
 
+import * as crypto from "node:crypto";
 import { config } from "../config";
 import { readJson, withLock, writeJson } from "../lib/atomic-file";
-import { sha256Hex } from "../lib/hash";
+import { sha256Hex, generateToken, constantTimeEqualHex } from "../lib/hash";
 import {
   type AdminCredentialsFile,
   AdminCredentialsFileSchema,
@@ -75,7 +76,7 @@ export async function hasAnyAdmin(): Promise<boolean> {
 export async function createAdmin(name: string): Promise<AdminRecord> {
   return mutateAdminCredentials((draft) => {
     const now = new Date().toISOString();
-    const id = `a_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+    const id = `a_${Date.now().toString(36)}_${crypto.randomBytes(6).toString("hex")}`;
     const record: AdminRecord = {
       id,
       name,
@@ -84,6 +85,71 @@ export async function createAdmin(name: string): Promise<AdminRecord> {
     };
     draft.admins.push(record);
     return record;
+  });
+}
+
+/** Create a new admin with an invite token. Returns the plaintext token (shown once). */
+export async function createAdminWithInvite(name: string): Promise<{ admin: AdminRecord; plainInviteToken: string }> {
+  const plainInviteToken = generateToken(32);
+  const inviteTokenHash = sha256Hex(plainInviteToken);
+  const admin = await mutateAdminCredentials((draft) => {
+    if (draft.admins.some((a) => a.name.toLowerCase() === name.toLowerCase())) {
+      throw new Error("An admin with that name already exists");
+    }
+    const now = new Date().toISOString();
+    const id = `a_${Date.now().toString(36)}_${crypto.randomBytes(6).toString("hex")}`;
+    const record: AdminRecord = {
+      id,
+      name,
+      credentials: [],
+      createdAt: now,
+      inviteTokenHash,
+    };
+    draft.admins.push(record);
+    return record;
+  });
+  return { admin, plainInviteToken };
+}
+
+/** Find an admin by invite token. Returns null if no match or token is missing. */
+export async function findAdminByInviteToken(token: string): Promise<AdminRecord | null> {
+  if (!token) return null;
+  const candidateHash = sha256Hex(token);
+  const data = await loadAdminCredentials();
+  for (const admin of data.admins) {
+    if (admin.inviteTokenHash && constantTimeEqualHex(admin.inviteTokenHash, candidateHash)) {
+      return admin;
+    }
+  }
+  return null;
+}
+
+/** Clear the invite token after successful registration. */
+export async function clearInviteToken(adminId: string): Promise<void> {
+  await mutateAdminCredentials((draft) => {
+    const admin = draft.admins.find((a) => a.id === adminId);
+    if (admin) admin.inviteTokenHash = null;
+  });
+}
+
+/** List all admins (public projection — no invite token hashes). */
+export async function listAdmins(): Promise<Array<{ id: string; name: string; createdAt: string; credentialCount: number }>> {
+  const data = await loadAdminCredentials();
+  return data.admins.map((a) => ({
+    id: a.id,
+    name: a.name,
+    createdAt: a.createdAt,
+    credentialCount: a.credentials.length,
+  }));
+}
+
+/** Delete an admin and all their sessions. */
+export async function deleteAdmin(adminId: string): Promise<boolean> {
+  return mutateAdminCredentials((draft) => {
+    const idx = draft.admins.findIndex((a) => a.id === adminId);
+    if (idx < 0) return false;
+    draft.admins.splice(idx, 1);
+    return true;
   });
 }
 

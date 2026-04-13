@@ -22,6 +22,7 @@ const { execFile } = require("node:child_process");
 
 const PORT = parseInt(process.env.SIDECAR_PORT || "9090", 10);
 const CMD_TIMEOUT_MS = 15_000;
+const SIDECAR_TOKEN = process.env.SIDECAR_TOKEN || "";
 
 // ── Validation ──────────────────────────────────────────────────────
 
@@ -141,6 +142,13 @@ const server = http.createServer(async (req, res) => {
   };
 
   try {
+    // Shared-secret gate — if SIDECAR_TOKEN is set, every request
+    // (except healthz) must carry a matching x-sidecar-token header.
+    if (SIDECAR_TOKEN && req.url !== "/healthz") {
+      if (req.headers["x-sidecar-token"] !== SIDECAR_TOKEN) {
+        return respond(403, { success: false, error: "forbidden" });
+      }
+    }
     if (req.method === "GET" && req.url === "/healthz") {
       return respond(200, { ok: true });
     }
@@ -165,7 +173,7 @@ const server = http.createServer(async (req, res) => {
     respond(404, { success: false, error: "not found" });
   } catch (err) {
     console.error("sidecar error:", err.message);
-    respond(500, { success: false, error: err.message });
+    respond(500, { success: false, error: "internal error" });
   }
 });
 

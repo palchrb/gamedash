@@ -53,6 +53,20 @@ export async function withLock<T>(key: string, fn: () => Promise<T>): Promise<T>
   }
 }
 
+// ── Read cache ────────────────────────────────────────────────────────
+// Short-lived read cache to avoid re-reading and re-parsing the same
+// JSON file when multiple callers load it within a tight window (e.g.
+// stats collector, active-sessions endpoint, and knock PWA all reading
+// firewall-rules.json within the same second). Invalidated on every
+// write so mutations always see fresh data.
+
+const READ_CACHE_TTL_MS = 2_000;
+const readCache = new Map<string, { raw: string; parsed: unknown; expiresAt: number }>();
+
+export function invalidateReadCache(filePath: string): void {
+  readCache.delete(filePath);
+}
+
 // ── Atomic read/write ──────────────────────────────────────────────────
 
 /** Write `data` atomically: temp file + fsync + rename. */
@@ -68,18 +82,29 @@ export async function writeAtomic(filePath: string, data: string): Promise<void>
     await fh.close();
   }
   await fs.rename(tmp, filePath);
+  invalidateReadCache(filePath);
 }
 
 /**
  * Read a JSON file and parse through a schema. Returns `defaultValue` if the
  * file does not exist. Uses z.output<S> so schemas with `.default()` are
  * handled correctly (input optional, output required).
+ *
+ * Results are cached for a short TTL to avoid redundant disk I/O when
+ * multiple callers read the same file within a tight window. The cache
+ * is invalidated on every write via `writeAtomic`.
  */
 export async function readJson<S extends z.ZodTypeAny>(
   filePath: string,
   schema: S,
   defaultValue: z.output<S>,
 ): Promise<z.output<S>> {
+  const now = Date.now();
+  const cached = readCache.get(filePath);
+  if (cached && cached.expiresAt > now) {
+    return cached.parsed as z.output<S>;
+  }
+
   let raw: string;
   try {
     raw = await fs.readFile(filePath, "utf8");
@@ -100,6 +125,7 @@ export async function readJson<S extends z.ZodTypeAny>(
       .join("\n");
     throw new Error(`Corrupt or invalid ${filePath}:\n${details}`);
   }
+  readCache.set(filePath, { raw, parsed: result.data, expiresAt: now + READ_CACHE_TTL_MS });
   return result.data as z.output<S>;
 }
 
@@ -115,6 +141,7 @@ export async function writeJson<S extends z.ZodTypeAny>(
       `Refusing to write invalid data to ${filePath}: ${result.error.message}`,
     );
   }
+  invalidateReadCache(filePath);
   await writeAtomic(filePath, JSON.stringify(result.data, null, 2));
 }
 
