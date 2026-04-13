@@ -111,6 +111,8 @@
   "directory.col_last_seen": "Last seen",
   "directory.col_status": "Status",
   "directory.col_actions": "Actions",
+  "directory.manage": "Manage",
+  "directory.manage_title": "Manage player",
   "directory.edit_services": "Edit services",
   "directory.edit_services_title": "Edit allowed services",
   "directory.edit_services_none": "No services selected",
