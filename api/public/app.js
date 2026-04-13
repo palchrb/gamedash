@@ -1319,5 +1319,4 @@ async function bootApp() {
 }
 
 // ---- Entry point ---------------------------------------------------------
-loadI18n();
-checkSessionOrLogin();
+loadI18n().then(() => checkSessionOrLogin());
