@@ -1028,28 +1028,33 @@ async function loadActiveSessions() {
 // --- Stats leaderboard ----------------------------------------------------
 async function loadStatsLeaderboard() {
   const data = await api("/admin/api/stats");
-  const list = document.getElementById("stats-leaderboard");
-  if (!list || !data || !data.leaderboard) return;
+  const targets = [
+    document.getElementById("stats-leaderboard"),
+    document.getElementById("play-stats-leaderboard"),
+  ].filter(Boolean);
+  if (targets.length === 0 || !data || !data.leaderboard) return;
+  let html;
   if (data.leaderboard.length === 0) {
-    list.innerHTML = `<li class="muted">${t("stats.no_data")}</li>`;
-    return;
+    html = `<li class="muted">${t("stats.no_data")}</li>`;
+  } else {
+    // Map userId → name via /api/users
+    const usersData = await api("/admin/api/users");
+    const nameById = {};
+    if (usersData && usersData.users) {
+      for (const u of usersData.users) nameById[u.id] = u.name;
+    }
+    html = data.leaderboard
+      .map((row) => {
+        const h = Math.floor(row.totalSeconds / 3600);
+        const m = Math.floor((row.totalSeconds % 3600) / 60);
+        return `<li class="firewall-item">
+          <span><strong>${escapeHtml(nameById[row.userId] || row.userId)}</strong></span>
+          <span class="firewall-meta">${h}h ${m}m</span>
+        </li>`;
+      })
+      .join("");
   }
-  // Map userId → name via /api/users
-  const usersData = await api("/admin/api/users");
-  const nameById = {};
-  if (usersData && usersData.users) {
-    for (const u of usersData.users) nameById[u.id] = u.name;
-  }
-  list.innerHTML = data.leaderboard
-    .map((row) => {
-      const h = Math.floor(row.totalSeconds / 3600);
-      const m = Math.floor((row.totalSeconds % 3600) / 60);
-      return `<li class="firewall-item">
-        <span><strong>${escapeHtml(nameById[row.userId] || row.userId)}</strong></span>
-        <span class="firewall-meta">${h}h ${m}m</span>
-      </li>`;
-    })
-    .join("");
+  for (const el of targets) el.innerHTML = html;
 }
 
 // ---- Play tab (mirrors the player PWA) ----------------------------------
@@ -1314,5 +1319,4 @@ async function bootApp() {
 }
 
 // ---- Entry point ---------------------------------------------------------
-loadI18n();
-checkSessionOrLogin();
+loadI18n().then(() => checkSessionOrLogin());
