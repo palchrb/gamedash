@@ -42,9 +42,11 @@
     {
       "id": "terraria",
       "name": "Terraria",
-      "type": "generic",
+      "type": "tshock",
       "container": "terraria",
       "connectAddress": "play.example.com:7777",
+      "_comment_tshock": "Configure an Application REST Token in tshock config.json — runtime /v2/token/create tokens don't survive restart. Token name must be hard to guess.",
+      "tshockApiToken": "your-application-rest-token-here",
       "ports": [
         { "port": "7777", "proto": "tcp" }
       ]

@@ -369,18 +369,14 @@ export function knockPwaRouter(): Router {
 
       const playersByService: Record<string, string[]> = {};
       for (const svc of registry().services.values()) {
-        if (svc.hasCapability("rcon") && svc.isRconConnected?.()) {
+        if (svc.hasCapability("players")) {
           try {
-            const r = await svc.rconSend!("list");
-            const m = r.match(/There are \d+ of a max of \d+ players online:(.*)/u);
-            if (m && m[1]) {
-              playersByService[svc.id] = m[1]
-                .split(",")
-                .map((p) => p.trim())
-                .filter(Boolean);
+            const st = await svc.status();
+            if (st.players.length > 0) {
+              playersByService[svc.id] = st.players;
             }
           } catch {
-            // ignore
+            // ignore — player fetch is best-effort
           }
         }
       }

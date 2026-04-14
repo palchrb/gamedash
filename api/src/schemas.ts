@@ -26,7 +26,7 @@ export const IsoTimestampSchema = z
 export const ServiceConfigSchema = z.object({
   id: z.string().min(1).regex(/^[a-z0-9_-]+$/u, "id must be lowercase alphanumeric"),
   name: z.string().min(1),
-  type: z.enum(["minecraft", "generic"]),
+  type: z.enum(["minecraft", "generic", "tshock"]),
   container: z.string().min(1),
   ports: z.array(PortSpecSchema).min(1),
   dataDir: z.string().optional(),
@@ -56,6 +56,9 @@ export const ServiceConfigSchema = z.object({
       name: z.string().optional(),
     })
     .optional(),
+  // TShock (Terraria) REST API — defaults to http://<container>:7878
+  tshockApiUrl: z.string().url().optional(),
+  tshockApiToken: z.string().optional(),
   backupsDir: z.string().optional(),
   worldsDir: z.string().optional(),
   activeWorldDir: z.string().optional(),
