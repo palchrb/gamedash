@@ -15,7 +15,9 @@ import { logger } from "../logger";
 import { pathExists, readJson } from "../lib/atomic-file";
 import { ServicesFileSchema, type PortSpec, type RuleService } from "../schemas";
 import { GenericAdapter } from "./generic";
+import { ImpostorAdapter } from "./impostor";
 import { MinecraftAdapter } from "./minecraft";
+import { TShockAdapter } from "./tshock";
 import type { ServiceAdapter, ServiceDescriptor } from "./types";
 
 export class Registry {
@@ -32,8 +34,21 @@ export class Registry {
     this.services.clear();
     for (const cfg of data.services) {
       try {
-        const adapter: ServiceAdapter =
-          cfg.type === "minecraft" ? new MinecraftAdapter(cfg) : new GenericAdapter(cfg);
+        let adapter: ServiceAdapter;
+        switch (cfg.type) {
+          case "minecraft":
+            adapter = new MinecraftAdapter(cfg);
+            break;
+          case "impostor":
+            adapter = new ImpostorAdapter(cfg);
+            break;
+          case "tshock":
+            adapter = new TShockAdapter(cfg);
+            break;
+          default:
+            adapter = new GenericAdapter(cfg);
+            break;
+        }
         this.services.set(cfg.id, adapter);
         logger().info({ id: cfg.id, type: cfg.type }, "service loaded");
       } catch (err) {

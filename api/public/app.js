@@ -1121,7 +1121,7 @@ function wirePlayImpostorDownloads() {
   }
 }
 
-async function playKnock() {
+async function playKnock(force = false) {
   const btn = $("play-knock-btn");
   btn.disabled = true;
   const ips = await detectPublicIps();
@@ -1130,33 +1130,48 @@ async function playKnock() {
     btn.textContent = t("btn.knock_all");
     return toast("Could not detect your public IP", "error");
   }
-  const data = await api("/admin/api/firewall/add", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ips, label: "Admin" }),
-  });
+  // Use /self-knock which replaces the admin's own auto-rule (keyed on
+  // adminId) with smart-revoke check for active sessions. /firewall/add
+  // still exists for admins who want to add arbitrary IPs manually.
+  let res;
+  try {
+    res = await fetch("/admin/api/firewall/self-knock", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ips, force }),
+    });
+  } catch (err) {
+    btn.disabled = false;
+    return toast(err.message, "error");
+  }
+  const data = await res.json().catch(() => ({}));
   btn.disabled = false;
+
+  if (res.status === 409 && data.requireConfirm === "active_session") {
+    const ok = confirm(
+      `Your old IP (${(data.oldIps || []).join(", ")}) still has an active game session (${data.matchCount} connection${data.matchCount === 1 ? "" : "s"}). Replace it with your new IP anyway?`,
+    );
+    if (!ok) return;
+    return playKnock(true);
+  }
+
   if (data && data.success) {
     toast(t("knock.success"), "success");
-  } else if (data) {
-    toast(data.error || "Failed", "error");
+  } else {
+    toast((data && data.error) || "Failed", "error");
   }
   refreshPlayState();
   refreshPlayActive();
 }
 
 async function playRevoke() {
-  // Find admin's rule and remove it
-  const fwData = await api("/admin/api/firewall");
-  if (!fwData || !fwData.rules) return;
-  const myRule = fwData.rules.find((r) => !r.userId);
-  if (!myRule) return;
-  await api("/admin/api/firewall/remove", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ips: [myRule.ips[0]] }),
-  });
-  toast("Revoked", "success");
+  const data = await api("/admin/api/firewall/self-revoke", { method: "POST" });
+  if (data && data.success) {
+    toast(data.removed ? "Revoked" : "No active rule", "success");
+  } else if (data) {
+    toast(data.error || "Failed", "error");
+  }
   refreshPlayState();
 }
 
@@ -1171,7 +1186,12 @@ async function refreshPlayState() {
 
   let myRule = null;
   if (fwData && fwData.rules) {
-    myRule = fwData.rules.find((r) => !r.userId);
+    // Prefer this admin's own self-knock rule (keyed on adminId).
+    // Fall back to any admin-type rule (no userId) for backwards
+    // compatibility with pre-adminId rules still on disk.
+    myRule =
+      fwData.rules.find((r) => r.adminId && r.adminId === CURRENT_ADMIN_ID) ??
+      fwData.rules.find((r) => !r.userId && !r.adminId);
   }
 
   revokeBtn.hidden = !myRule;
