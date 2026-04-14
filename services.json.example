@@ -35,8 +35,9 @@
         "scheme": "http",
         "name": "My Server"
       },
-      "_comment_admin_api": "Requires the Impostor.Plugins.AdminApi plugin running on the Impostor server. Defaults to http://<container>:8081 — override with impostorAdminApiUrl. Set impostorAdminApiKey to match the X-Admin-Key configured in the plugin (leave empty if AdminApi is bound to localhost only).",
+      "_comment_admin_api": "Requires the Impostor.Plugins.AdminApi plugin running on the Impostor server. Defaults to http://<container>:8081 — override with impostorAdminApiUrl. Set impostorAdminApiKey to match the X-Admin-Key configured in the plugin (leave empty if AdminApi is bound to localhost only). impostorShowPrivateGames (default false): private lobbies are hidden from the PWA lobby list by default; set to true in a family setup where siblings should see each other's private games.",
       "impostorAdminApiUrl": "http://impostor:8081",
+      "impostorShowPrivateGames": false,
       "ports": [
         { "port": "22023", "proto": "udp" }
       ]

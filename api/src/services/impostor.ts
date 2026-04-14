@@ -75,6 +75,7 @@ interface GameState extends GameSummary {
 export class ImpostorAdapter extends GenericAdapter {
   private readonly apiUrl: string;
   private readonly apiKey: string | null;
+  private readonly showPrivateGames: boolean;
   private readonly games = new Map<string, GameState>();
   private connected = false;
   private running = true;
@@ -86,6 +87,11 @@ export class ImpostorAdapter extends GenericAdapter {
     this.apiUrl =
       config.impostorAdminApiUrl ?? `http://${config.container}:8081`;
     this.apiKey = config.impostorAdminApiKey ?? null;
+    // Default false respects the "private" toggle set by the lobby
+    // host — they explicitly said they don't want it public. Flip to
+    // true in services.json for a family setup where siblings are
+    // expected to be able to join each other's lobbies from the PWA.
+    this.showPrivateGames = config.impostorShowPrivateGames ?? false;
     this.capabilities.add("players");
     void this.runLoop();
   }
@@ -287,9 +293,15 @@ export class ImpostorAdapter extends GenericAdapter {
     const base = await super.status();
     if (!base.running) return base;
 
+    // All games contribute to player count / aggregate stats — the
+    // privacy flag only affects whether individual codes are exposed
+    // to the lobby list in the PWA.
     const gamesArr = [...this.games.values()];
     const allNames = gamesArr.flatMap((g) => g.players.map((p) => p.name));
-    const gamesView = gamesArr.map((g) => ({
+    const visibleGames = this.showPrivateGames
+      ? gamesArr
+      : gamesArr.filter((g) => g.isPublic);
+    const gamesView = visibleGames.map((g) => ({
       code: g.code,
       host: g.hostName,
       players: g.players.map((p) => p.name),
@@ -300,6 +312,7 @@ export class ImpostorAdapter extends GenericAdapter {
       map: MAP_NAMES[g.mapId] ?? `Map ${g.mapId}`,
       impostors: g.numImpostors,
     }));
+    const privateHidden = gamesArr.length - visibleGames.length;
 
     return {
       running: true,
@@ -309,6 +322,7 @@ export class ImpostorAdapter extends GenericAdapter {
         adminApiConnected: this.connected,
         gameCount: gamesArr.length,
         publicGames: gamesArr.filter((g) => g.isPublic).length,
+        privateGamesHidden: privateHidden,
         totalPlayers: gamesArr.reduce((s, g) => s + g.playerCount, 0),
         games: gamesView,
       },
