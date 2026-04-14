@@ -27,7 +27,7 @@
     {
       "id": "impostor",
       "name": "Among Us",
-      "type": "generic",
+      "type": "impostor",
       "container": "impostor",
       "connectAddress": "play.example.com:22023",
       "connectHelper": {
@@ -35,6 +35,8 @@
         "scheme": "http",
         "name": "My Server"
       },
+      "_comment_admin_api": "Requires the Impostor.Plugins.AdminApi plugin running on the Impostor server. Defaults to http://<container>:8081 — override with impostorAdminApiUrl. Set impostorAdminApiKey to match the X-Admin-Key configured in the plugin (leave empty if AdminApi is bound to localhost only).",
+      "impostorAdminApiUrl": "http://impostor:8081",
       "ports": [
         { "port": "22023", "proto": "udp" }
       ]

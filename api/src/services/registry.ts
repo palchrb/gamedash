@@ -15,6 +15,7 @@ import { logger } from "../logger";
 import { pathExists, readJson } from "../lib/atomic-file";
 import { ServicesFileSchema, type PortSpec, type RuleService } from "../schemas";
 import { GenericAdapter } from "./generic";
+import { ImpostorAdapter } from "./impostor";
 import { MinecraftAdapter } from "./minecraft";
 import { TShockAdapter } from "./tshock";
 import type { ServiceAdapter, ServiceDescriptor } from "./types";
@@ -37,6 +38,9 @@ export class Registry {
         switch (cfg.type) {
           case "minecraft":
             adapter = new MinecraftAdapter(cfg);
+            break;
+          case "impostor":
+            adapter = new ImpostorAdapter(cfg);
             break;
           case "tshock":
             adapter = new TShockAdapter(cfg);
