@@ -1316,10 +1316,10 @@ function initPlayTab() {
   const knockBtn = $("play-knock-btn");
   knockBtn.textContent = t("btn.knock_all");
   knockBtn.disabled = false;
-  knockBtn.addEventListener("click", playKnock);
+  knockBtn.addEventListener("click", () => playKnock());
   const revokeBtn = $("play-revoke-btn");
   revokeBtn.textContent = t("btn.revoke");
-  revokeBtn.addEventListener("click", playRevoke);
+  revokeBtn.addEventListener("click", () => playRevoke());
   $("play-status").textContent = t("knock.never");
 }
 

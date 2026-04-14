@@ -336,7 +336,15 @@ export async function knockAdmin(
 /** Revoke the admin's auto-rule (leaves manual /firewall/add rules alone). */
 export async function revokeAdmin(adminId: string): Promise<{ removed: boolean; ips?: string[] }> {
   return mutateRules(async (draft) => {
-    const idx = draft.rules.findIndex((r) => r.adminId === adminId);
+    // Prefer the adminId-tied rule. Fall back to legacy admin-type rules
+    // (no userId and no adminId) that pre-date the self-knock migration —
+    // removing one per call, so clicking revoke repeatedly cleans up
+    // multiple stale rules without wiping unrelated manual entries in
+    // one go.
+    let idx = draft.rules.findIndex((r) => r.adminId === adminId);
+    if (idx < 0) {
+      idx = draft.rules.findIndex((r) => !r.userId && !r.adminId);
+    }
     if (idx < 0) return { removed: false };
     const rule = draft.rules[idx]!;
     try {
