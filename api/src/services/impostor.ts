@@ -113,6 +113,28 @@ export class ImpostorAdapter extends GenericAdapter {
     }
   }
 
+  /**
+   * Fetch a single game's full detail via REST and merge into state.
+   * Called after game.created (where the event payload is minimal) so
+   * MaxPlayers, Map, NumImpostors etc. become accurate without waiting
+   * for the next reconnect snapshot.
+   */
+  private async refreshGameDetail(code: string): Promise<void> {
+    const detail = await this.fetchJson<GameDetail>(
+      `/admin/games/${encodeURIComponent(code)}`,
+    );
+    if (!detail) return;
+    const existing = this.games.get(code);
+    const playersFromDetail = detail.players ?? [];
+    this.games.set(code, {
+      ...detail.summary,
+      // Keep any players we already had from SSE events in case the
+      // REST fetch happened mid-flight, but let REST be authoritative
+      // when it has values.
+      players: playersFromDetail.length > 0 ? playersFromDetail : (existing?.players ?? []),
+    });
+  }
+
   /** Re-populate `games` from a fresh REST snapshot. */
   private async snapshot(signal: AbortSignal): Promise<boolean> {
     const summaries = await this.fetchJson<GameSummary[]>("/admin/games", signal);
@@ -219,12 +241,17 @@ export class ImpostorAdapter extends GenericAdapter {
       case "game.created": {
         if (!code) return;
         if (!this.games.has(code)) {
+          // The game.created event only carries {code, hostName, hostIp}
+          // from the plugin. Map, MaxPlayers, NumImpostors and GameMode
+          // all live in game.Options on the server side and require a
+          // REST fetch. Stub an entry now so subsequent player.joined
+          // events have somewhere to land, then refresh from /admin/games/{code}.
           this.games.set(code, {
             code,
             hostName: (data["hostName"] as string) ?? null,
             displayName: null,
             playerCount: 0,
-            maxPlayers: 15,
+            maxPlayers: 10,
             state: "NotStarted",
             isPublic: false,
             numImpostors: 0,
@@ -232,6 +259,7 @@ export class ImpostorAdapter extends GenericAdapter {
             gameMode: "Normal",
             players: [],
           });
+          void this.refreshGameDetail(code);
         }
         return;
       }
