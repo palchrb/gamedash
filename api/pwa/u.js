@@ -458,6 +458,59 @@
         })
         .join("");
 
+      // ── Active game lobbies (currently only surfaced by Impostor) ──
+      const gamesByService = data.games || {};
+      const serviceNames = {};
+      for (const sv of Object.values(svcMap)) serviceNames[sv.id] = sv.name;
+      // Fallback: if a service had no player/connection count, svcMap may
+      // not have an entry — pick up the name from any session's services.
+      for (const s of data.sessions) {
+        for (const sv of s.services) {
+          if (!serviceNames[sv.id]) serviceNames[sv.id] = sv.name;
+        }
+      }
+      const gamesBlock = Object.entries(gamesByService)
+        .flatMap(([sid, games]) => {
+          if (!Array.isArray(games) || games.length === 0) return [];
+          const svcName = serviceNames[sid] || sid;
+          const items = games
+            .map((g) => {
+              const code = String(g.code || "").toUpperCase();
+              const host = g.host ? escapeHtml(g.host) : "";
+              const playerCount = typeof g.playerCount === "number" ? g.playerCount : (g.players || []).length;
+              const max = g.maxPlayers ? `/${g.maxPlayers}` : "";
+              const visibility = g.isPublic
+                ? '<span class="game-badge game-public">public</span>'
+                : '<span class="game-badge game-private">private</span>';
+              const state = g.state && g.state !== "NotStarted"
+                ? `<span class="game-badge game-state">${escapeHtml(String(g.state).toLowerCase())}</span>`
+                : "";
+              const map = g.map ? `<span class="game-map">${escapeHtml(g.map)}</span>` : "";
+              const players = (g.players || []).length > 0
+                ? `<div class="svc-summary-names">${g.players.map(escapeHtml).join(", ")}</div>`
+                : "";
+              return `<li class="game-item" data-game-code="${escapeAttr(code)}">
+                <div class="game-row">
+                  <span class="game-code" title="Tap to copy">${escapeHtml(code)}</span>
+                  ${map}
+                  <span class="game-players">${playerCount}${max}</span>
+                  ${visibility}
+                  ${state}
+                </div>
+                ${host ? `<div class="game-meta muted">Host: ${host}</div>` : ""}
+                ${players}
+              </li>`;
+            })
+            .join("");
+          return [
+            `<div class="svc-games-group">
+               <h3 class="svc-games-title">${escapeHtml(svcName)} · ${games.length} active</h3>
+               <ul class="svc-games-list">${items}</ul>
+             </div>`,
+          ];
+        })
+        .join("");
+
       // ── Per-user list (existing) ──
       const userList = data.sessions
         .map((s) => {
@@ -478,8 +531,24 @@
         .join("");
 
       activeList.innerHTML =
-        (svcSummary ? `<div class="svc-summary">${svcSummary}</div><hr class="active-divider">` : "") +
+        (svcSummary ? `<div class="svc-summary">${svcSummary}</div>` : "") +
+        (gamesBlock ? gamesBlock : "") +
+        ((svcSummary || gamesBlock) ? '<hr class="active-divider">' : "") +
         userList;
+
+      // Click game code → copy + toast. (Among Us has no deep link to
+      // auto-join a specific game, so copy-to-clipboard is the best
+      // UX we can offer.)
+      for (const el of document.querySelectorAll("[data-game-code]")) {
+        el.addEventListener("click", () => {
+          const code = el.getAttribute("data-game-code");
+          if (!code) return;
+          navigator.clipboard.writeText(code).then(
+            () => showToast(`Copied ${code}`, "success"),
+            () => showToast(`Code: ${code}`, "info"),
+          );
+        });
+      }
     } catch (err) {
       console.error("refreshActive failed:", err);
     }

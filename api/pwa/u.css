@@ -284,6 +284,21 @@ li.li-wrap { flex-wrap: wrap; }
 .svc-players { font-style: italic; }
 .active-divider { border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 8px 0; }
 
+.svc-games-group { margin: 8px 0; }
+.svc-games-title { font-size: 14px; color: var(--muted); margin: 6px 0 4px; font-weight: 500; }
+.svc-games-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.game-item { padding: 6px 8px; background: rgba(255,255,255,0.03); border-radius: 8px; }
+.game-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14px; }
+.game-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.5px; background: var(--bg-2); padding: 2px 8px; border-radius: 4px; cursor: pointer; user-select: all; }
+.game-code:hover { background: rgba(78, 222, 128, 0.15); }
+.game-map { color: var(--muted); font-size: 13px; }
+.game-players { margin-left: auto; font-size: 13px; color: var(--accent); font-weight: 600; }
+.game-badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; }
+.game-public { background: rgba(78, 222, 128, 0.15); color: var(--accent); }
+.game-private { background: rgba(155, 155, 155, 0.15); color: var(--muted); }
+.game-state { background: rgba(245, 158, 11, 0.15); color: var(--warn); }
+.game-meta { font-size: 12px; margin-top: 2px; }
+
 .week-bars {
   display: flex;
   align-items: flex-end;

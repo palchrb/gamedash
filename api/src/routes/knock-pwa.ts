@@ -368,12 +368,20 @@ export function knockPwaRouter(): Router {
       }
 
       const playersByService: Record<string, string[]> = {};
+      const gamesByService: Record<string, unknown[]> = {};
       for (const svc of registry().services.values()) {
         if (svc.hasCapability("players")) {
           try {
             const st = await svc.status();
             if (st.players.length > 0) {
               playersByService[svc.id] = st.players;
+            }
+            // Adapters that expose per-game detail (currently only
+            // Impostor) surface it in details.games so the PWA can
+            // render a lobby browser with codes, hosts, maps etc.
+            const maybeGames = (st.details as { games?: unknown[] } | undefined)?.games;
+            if (Array.isArray(maybeGames) && maybeGames.length > 0) {
+              gamesByService[svc.id] = maybeGames;
             }
           } catch {
             // ignore — player fetch is best-effort
@@ -403,7 +411,7 @@ export function knockPwaRouter(): Router {
         return { userId: u.id, name: u.name, ips, services };
       });
 
-      res.json({ success: true, sessions });
+      res.json({ success: true, sessions, games: gamesByService });
     }),
   );
 
