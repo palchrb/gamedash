@@ -173,6 +173,7 @@ export const FirewallRuleSchema = z.preprocess(
     expiresAt: IsoTimestampSchema.nullable().optional(),
     label: z.string().default(""),
     userId: z.string().nullable().optional(),
+    adminId: z.string().nullable().optional(),
     services: z.array(RuleServiceSchema),
   }),
 );

@@ -21,8 +21,10 @@ import {
 import { ufwAllowMany, ufwDeleteMany } from "../firewall/ufw";
 import { listAllConnections } from "../firewall/connections";
 import { listUsers } from "../repos/users";
-import { loadAdminCredentials } from "../repos/admin";
+import { findAdminById, loadAdminCredentials } from "../repos/admin";
 import { registry } from "../services/registry";
+import { knockAdmin, revokeAdmin } from "../knock/smart-revoke";
+import { z } from "zod";
 
 const firewallLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -79,6 +81,57 @@ export function firewallRouter(): Router {
       });
       await audit({ kind: "firewall.add_manual", ips, label: body.label ?? "" });
       res.json({ success: true, ips, errors });
+    }),
+  );
+
+  // ── Admin self-knock ─────────────────────────────────────────────────
+  // Unlike /api/firewall/add (which adds arbitrary rules), this endpoint
+  // maintains exactly one auto-rule per admin (keyed on adminId). Re-knocking
+  // from a new network replaces the existing rule with smart-revoke check.
+  const SelfKnockBodySchema = z.object({
+    ips: z.array(z.string()).min(1),
+    force: z.boolean().optional(),
+  });
+
+  router.post(
+    "/api/firewall/self-knock",
+    firewallLimiter,
+    asyncH(async (req, res) => {
+      const adminId = req.adminId;
+      if (!adminId) throw new HttpError(401, "admin session required");
+      const admin = await findAdminById(adminId);
+      if (!admin) throw new HttpError(401, "admin not found");
+      const body = SelfKnockBodySchema.parse(req.body);
+      const result = await knockAdmin(adminId, admin.name, body.ips, registry(), {
+        force: body.force,
+        ua: req.headers["user-agent"] ?? null,
+      });
+      if (result.status === "requires_confirm") {
+        res.status(409).json({
+          success: false,
+          requireConfirm: result.reason,
+          oldIps: result.oldIps,
+          matchCount: result.matchCount,
+          oldServices: result.oldServices,
+        });
+        return;
+      }
+      res.json({
+        success: true,
+        ips: result.rule.ips,
+        errors: result.errors,
+      });
+    }),
+  );
+
+  router.post(
+    "/api/firewall/self-revoke",
+    firewallLimiter,
+    asyncH(async (req, res) => {
+      const adminId = req.adminId;
+      if (!adminId) throw new HttpError(401, "admin session required");
+      const result = await revokeAdmin(adminId);
+      res.json({ success: true, removed: result.removed, ips: result.ips ?? [] });
     }),
   );
 

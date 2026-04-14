@@ -226,6 +226,130 @@ export async function revokeUser(userId: string): Promise<{ removed: boolean; ip
   });
 }
 
+/**
+ * Admin self-knock — mirrors knockUser but keyed on adminId so each
+ * admin has at most one auto-rule at a time. Re-knocking from a new
+ * network replaces the old rule (with smart-revoke check for active
+ * sessions), rather than adding a duplicate. Manual /firewall/add
+ * rules (no adminId) are unaffected and can coexist.
+ *
+ * Admin rules have no TTL by design — admins keep the rule until they
+ * explicitly revoke or re-knock from elsewhere.
+ */
+export async function knockAdmin(
+  adminId: string,
+  adminName: string,
+  ips: readonly string[],
+  registry: Registry,
+  options: { force?: boolean; ua?: string | null } = {},
+): Promise<KnockResult> {
+  const newIps = sanitiseIps(ips);
+  if (newIps.length === 0) {
+    throw new Error("Invalid or non-public IP address");
+  }
+  const portList = registry.collectPorts();
+  if (portList.length === 0) {
+    throw new Error("No ports configured");
+  }
+
+  return mutateRules(async (draft) => {
+    const existingIdx = draft.rules.findIndex((r) => r.adminId === adminId);
+    const existing = existingIdx >= 0 ? draft.rules[existingIdx] ?? null : null;
+
+    // ── Overlap (same network, e.g. v4+v6 from same ISP) → merge ──
+    if (existing) {
+      const existingSet = new Set(existing.ips);
+      const overlap = newIps.some((ip) => existingSet.has(ip));
+      if (overlap) {
+        const mergedIps = [...new Set([...existing.ips, ...newIps])];
+        const addedIps = mergedIps.filter((ip) => !existingSet.has(ip));
+        let errors: UfwError[] = [];
+        if (addedIps.length > 0) {
+          errors = await ufwAllowMany(addedIps, portList);
+        }
+        draft.rules[existingIdx] = {
+          ...existing,
+          ips: mergedIps,
+          services: registry.buildRuleServices(),
+        };
+        return {
+          status: "ok" as const,
+          rule: draft.rules[existingIdx]!,
+          expiresAt: existing.expiresAt ?? "",
+          errors,
+        };
+      }
+    }
+
+    // ── Different network: smart-revoke check ──
+    if (existing && !options.force) {
+      const oldPorts = flattenPorts(existing);
+      const active = await isAnyIpActiveOnPorts(existing.ips, oldPorts);
+      if (active.active) {
+        await audit({
+          kind: "admin.knock_blocked_active_session",
+          adminId,
+          oldIps: existing.ips,
+          newIps,
+          matchCount: active.matchCount,
+        });
+        return {
+          status: "requires_confirm" as const,
+          reason: "active_session" as const,
+          oldIps: existing.ips,
+          matchCount: active.matchCount,
+          oldServices: existing.services.map((s) => s.id),
+        };
+      }
+    }
+
+    // ── Swap IP ──
+    if (existing) {
+      try {
+        await ufwDeleteMany(existing.ips, flattenPorts(existing));
+      } catch {
+        // logged inside
+      }
+      draft.rules.splice(existingIdx, 1);
+      await audit({
+        kind: "admin.knock_replace",
+        adminId,
+        ips: existing.ips,
+        reason: "ip_change",
+      });
+    }
+
+    const errors = await ufwAllowMany(newIps, portList);
+    const rule: FirewallRule = {
+      ips: newIps,
+      addedAt: new Date().toISOString(),
+      label: `Admin: ${adminName}`,
+      adminId,
+      services: registry.buildRuleServices(),
+    };
+    draft.rules.push(rule);
+    await audit({ kind: "admin.knock", adminId, ips: newIps });
+    return { status: "ok" as const, rule, expiresAt: "", errors };
+  });
+}
+
+/** Revoke the admin's auto-rule (leaves manual /firewall/add rules alone). */
+export async function revokeAdmin(adminId: string): Promise<{ removed: boolean; ips?: string[] }> {
+  return mutateRules(async (draft) => {
+    const idx = draft.rules.findIndex((r) => r.adminId === adminId);
+    if (idx < 0) return { removed: false };
+    const rule = draft.rules[idx]!;
+    try {
+      await ufwDeleteMany(rule.ips, flattenPorts(rule));
+    } catch {
+      // logged inside
+    }
+    draft.rules.splice(idx, 1);
+    await audit({ kind: "admin.revoke", adminId, ips: rule.ips });
+    return { removed: true, ips: rule.ips };
+  });
+}
+
 /** Periodic sweep to remove expired firewall rules. */
 export async function sweepExpiredRules(): Promise<number> {
   const now = Date.now();
