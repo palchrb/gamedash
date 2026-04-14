@@ -87,10 +87,11 @@ export class ImpostorAdapter extends GenericAdapter {
     this.apiUrl =
       config.impostorAdminApiUrl ?? `http://${config.container}:8081`;
     this.apiKey = config.impostorAdminApiKey ?? null;
-    // Default true preserves current behaviour for family setups where
-    // siblings joining each other's lobbies is the point. Set false in
-    // services.json to hide private lobbies from the PWA entirely.
-    this.showPrivateGames = config.impostorShowPrivateGames ?? true;
+    // Default false respects the "private" toggle set by the lobby
+    // host — they explicitly said they don't want it public. Flip to
+    // true in services.json for a family setup where siblings are
+    // expected to be able to join each other's lobbies from the PWA.
+    this.showPrivateGames = config.impostorShowPrivateGames ?? false;
     this.capabilities.add("players");
     void this.runLoop();
   }

@@ -63,8 +63,8 @@ export const ServiceConfigSchema = z.object({
   impostorAdminApiUrl: z.string().url().optional(),
   impostorAdminApiKey: z.string().optional(),
   // Whether to expose private game codes in the PWA lobby list.
-  //   true  (default): show both public and private games
-  //   false: only show public games — private ones are hidden entirely
+  //   false (default): only show public games — private ones are hidden
+  //   true: show both public and private games (family setup)
   impostorShowPrivateGames: z.boolean().optional(),
   backupsDir: z.string().optional(),
   worldsDir: z.string().optional(),
