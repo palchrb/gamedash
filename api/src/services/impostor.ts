@@ -309,9 +309,49 @@ export class ImpostorAdapter extends GenericAdapter {
         return;
       }
 
-      // Other events (chat, player.murder, meeting.*) aren't surfaced
-      // in status() yet but could be subscribed to later for richer
-      // PWA features (live activity feed, recent kills, etc).
+      case "game.starting": {
+        const g = code ? this.games.get(code) : null;
+        if (g) g.state = "Starting";
+        return;
+      }
+
+      case "game.hostChanged": {
+        const g = code ? this.games.get(code) : null;
+        if (!g) return;
+        const newName = (data["newHostName"] as string) ?? null;
+        if (newName) g.hostName = newName;
+        // Update isHost flags on the players list so the UI can reflect
+        // the migration without waiting for the next snapshot.
+        const newId = data["newHostClientId"];
+        for (const p of g.players) p.isHost = p.clientId === newId;
+        return;
+      }
+
+      case "game.optionsChanged": {
+        const g = code ? this.games.get(code) : null;
+        if (!g) return;
+        if (typeof data["maxPlayers"] === "number") g.maxPlayers = data["maxPlayers"] as number;
+        if (typeof data["numImpostors"] === "number") g.numImpostors = data["numImpostors"] as number;
+        if (typeof data["mapId"] === "number") g.mapId = data["mapId"] as number;
+        if (typeof data["gameMode"] === "string") g.gameMode = data["gameMode"] as string;
+        return;
+      }
+
+      // These events are accepted but not surfaced in status() yet.
+      // Listing them explicitly (rather than falling through to the
+      // default) documents what the plugin emits and keeps future
+      // logging around unknown events meaningful.
+      case "client.connected":
+      case "player.joining.rejected":
+      case "chat":
+      case "player.murder":
+      case "player.exiled":
+      case "player.voted":
+      case "meeting.called":
+      case "meeting.started":
+      case "meeting.ended":
+        return;
+
       default:
         return;
     }
