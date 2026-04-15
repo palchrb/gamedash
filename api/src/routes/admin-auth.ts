@@ -28,9 +28,11 @@ import {
   findAdminByInviteToken,
   hasAnyAdmin,
   loadAdminCredentials,
+  updateAdminLocale,
 } from "../repos/admin";
 import { asyncH } from "../middleware/async-handler";
 import { HttpError } from "../middleware/error-handler";
+import { listAvailableLocales } from "../lib/i18n";
 import {
   generateAuthenticationOpts,
   generateRegistrationOpts,
@@ -99,13 +101,36 @@ export function adminAuthRouter(): Router {
       const admin = await findAdminById(session.adminId);
       res.json({
         success: true,
-        admin: admin ? { id: admin.id, name: admin.name } : null,
+        admin: admin
+          ? { id: admin.id, name: admin.name, locale: admin.locale ?? null }
+          : null,
         session: {
           expiresAt: session.expiresAt,
           reauthAfter: session.reauthAfter,
           lastSeenAt: session.lastSeenAt,
         },
       });
+    }),
+  );
+
+  // Admin self-service locale selector. Persists to admin-credentials.json
+  // so the choice sticks across devices. Priority in resolveLang is
+  // admin.locale > Accept-Language > DEFAULT_LOCALE.
+  const LocaleBodySchema = z.object({
+    locale: z.string().min(1).max(16),
+  });
+  router.post(
+    "/admin/api/admin/locale",
+    asyncH(async (req, res) => {
+      const session = await readAndRefreshAdminSession(req, res);
+      if (!session) throw new HttpError(401, "admin session required");
+      const body = LocaleBodySchema.parse(req.body);
+      const lang = body.locale.toLowerCase();
+      if (!listAvailableLocales().includes(lang)) {
+        throw new HttpError(400, "unknown locale");
+      }
+      await updateAdminLocale(session.adminId, lang);
+      res.json({ success: true, locale: lang });
     }),
   );
 

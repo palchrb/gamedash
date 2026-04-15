@@ -175,6 +175,17 @@ export async function removeAdminCredential(
   });
 }
 
+export async function updateAdminLocale(
+  adminId: string,
+  locale: string | null,
+): Promise<void> {
+  await mutateAdminCredentials((draft) => {
+    const admin = draft.admins.find((a) => a.id === adminId);
+    if (!admin) throw new Error("Admin not found");
+    admin.locale = locale;
+  });
+}
+
 export async function updateAdminCredentialCounter(
   adminId: string,
   credentialId: string,
