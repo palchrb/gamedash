@@ -142,6 +142,10 @@ li.li-wrap { flex-wrap: wrap; }
 .impostor-help-row p { margin: 4px 0; }
 .muted { color: var(--muted); font-size: 14px; }
 
+.pwa-footer { margin-top: 16px; padding: 12px 4px; opacity: 0.85; }
+.locale-row { display: flex; align-items: center; justify-content: flex-end; gap: 8px; font-size: 13px; }
+.locale-select { background: var(--bg-2); color: var(--fg); border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; padding: 4px 8px; font-size: 13px; text-transform: uppercase; }
+
 .btn {
   background: rgba(255,255,255,0.08);
   color: var(--fg);

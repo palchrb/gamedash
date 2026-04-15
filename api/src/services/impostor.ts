@@ -113,6 +113,28 @@ export class ImpostorAdapter extends GenericAdapter {
     }
   }
 
+  /**
+   * Fetch a single game's full detail via REST and merge into state.
+   * Called after game.created (where the event payload is minimal) so
+   * MaxPlayers, Map, NumImpostors etc. become accurate without waiting
+   * for the next reconnect snapshot.
+   */
+  private async refreshGameDetail(code: string): Promise<void> {
+    const detail = await this.fetchJson<GameDetail>(
+      `/admin/games/${encodeURIComponent(code)}`,
+    );
+    if (!detail) return;
+    const existing = this.games.get(code);
+    const playersFromDetail = detail.players ?? [];
+    this.games.set(code, {
+      ...detail.summary,
+      // Keep any players we already had from SSE events in case the
+      // REST fetch happened mid-flight, but let REST be authoritative
+      // when it has values.
+      players: playersFromDetail.length > 0 ? playersFromDetail : (existing?.players ?? []),
+    });
+  }
+
   /** Re-populate `games` from a fresh REST snapshot. */
   private async snapshot(signal: AbortSignal): Promise<boolean> {
     const summaries = await this.fetchJson<GameSummary[]>("/admin/games", signal);
@@ -219,12 +241,17 @@ export class ImpostorAdapter extends GenericAdapter {
       case "game.created": {
         if (!code) return;
         if (!this.games.has(code)) {
+          // The game.created event only carries {code, hostName, hostIp}
+          // from the plugin. Map, MaxPlayers, NumImpostors and GameMode
+          // all live in game.Options on the server side and require a
+          // REST fetch. Stub an entry now so subsequent player.joined
+          // events have somewhere to land, then refresh from /admin/games/{code}.
           this.games.set(code, {
             code,
             hostName: (data["hostName"] as string) ?? null,
             displayName: null,
             playerCount: 0,
-            maxPlayers: 15,
+            maxPlayers: 10,
             state: "NotStarted",
             isPublic: false,
             numImpostors: 0,
@@ -232,6 +259,7 @@ export class ImpostorAdapter extends GenericAdapter {
             gameMode: "Normal",
             players: [],
           });
+          void this.refreshGameDetail(code);
         }
         return;
       }
@@ -281,9 +309,49 @@ export class ImpostorAdapter extends GenericAdapter {
         return;
       }
 
-      // Other events (chat, player.murder, meeting.*) aren't surfaced
-      // in status() yet but could be subscribed to later for richer
-      // PWA features (live activity feed, recent kills, etc).
+      case "game.starting": {
+        const g = code ? this.games.get(code) : null;
+        if (g) g.state = "Starting";
+        return;
+      }
+
+      case "game.hostChanged": {
+        const g = code ? this.games.get(code) : null;
+        if (!g) return;
+        const newName = (data["newHostName"] as string) ?? null;
+        if (newName) g.hostName = newName;
+        // Update isHost flags on the players list so the UI can reflect
+        // the migration without waiting for the next snapshot.
+        const newId = data["newHostClientId"];
+        for (const p of g.players) p.isHost = p.clientId === newId;
+        return;
+      }
+
+      case "game.optionsChanged": {
+        const g = code ? this.games.get(code) : null;
+        if (!g) return;
+        if (typeof data["maxPlayers"] === "number") g.maxPlayers = data["maxPlayers"] as number;
+        if (typeof data["numImpostors"] === "number") g.numImpostors = data["numImpostors"] as number;
+        if (typeof data["mapId"] === "number") g.mapId = data["mapId"] as number;
+        if (typeof data["gameMode"] === "string") g.gameMode = data["gameMode"] as string;
+        return;
+      }
+
+      // These events are accepted but not surfaced in status() yet.
+      // Listing them explicitly (rather than falling through to the
+      // default) documents what the plugin emits and keeps future
+      // logging around unknown events meaningful.
+      case "client.connected":
+      case "player.joining.rejected":
+      case "chat":
+      case "player.murder":
+      case "player.exiled":
+      case "player.voted":
+      case "meeting.called":
+      case "meeting.started":
+      case "meeting.ended":
+        return;
+
       default:
         return;
     }
@@ -298,9 +366,14 @@ export class ImpostorAdapter extends GenericAdapter {
     // to the lobby list in the PWA.
     const gamesArr = [...this.games.values()];
     const allNames = gamesArr.flatMap((g) => g.players.map((p) => p.name));
+    // Only NotStarted lobbies are joinable — once a game enters
+    // Starting/Started, the client locks and the code is useless. Keep
+    // the players in aggregate counts but don't surface dead codes in
+    // the PWA lobby list.
+    const joinable = gamesArr.filter((g) => g.state === "NotStarted");
     const visibleGames = this.showPrivateGames
-      ? gamesArr
-      : gamesArr.filter((g) => g.isPublic);
+      ? joinable
+      : joinable.filter((g) => g.isPublic);
     const gamesView = visibleGames.map((g) => ({
       code: g.code,
       host: g.hostName,
@@ -312,7 +385,8 @@ export class ImpostorAdapter extends GenericAdapter {
       map: MAP_NAMES[g.mapId] ?? `Map ${g.mapId}`,
       impostors: g.numImpostors,
     }));
-    const privateHidden = gamesArr.length - visibleGames.length;
+    const privateHidden = joinable.length - visibleGames.length;
+    const inProgress = gamesArr.length - joinable.length;
 
     return {
       running: true,
@@ -321,6 +395,8 @@ export class ImpostorAdapter extends GenericAdapter {
         ...base.details,
         adminApiConnected: this.connected,
         gameCount: gamesArr.length,
+        joinableGames: joinable.length,
+        inProgressGames: inProgress,
         publicGames: gamesArr.filter((g) => g.isPublic).length,
         privateGamesHidden: privateHidden,
         totalPlayers: gamesArr.reduce((s, g) => s + g.playerCount, 0),
