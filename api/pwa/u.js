@@ -37,6 +37,8 @@
   const BASE = PORTAL_MODE ? "/my" : `/u/${TOKEN}`;
   const USER = init.user || {};
   const SERVICES = init.services || [];
+  const CURRENT_LANG = init.lang || "en";
+  const AVAILABLE_LOCALES = init.availableLocales || ["en"];
   const REQUIRE_PASSKEY = !!init.requirePasskey;
   const KEEP_ALIVE_MS = 10 * 60 * 1000;     // re-knock every 10 min while open
   const STATE_REFRESH_MS = 30 * 1000;       // poll active sessions every 30 s
@@ -786,6 +788,44 @@
     refreshState();
     refreshActive();
     refreshStats();
+    initLocaleSelector();
+  }
+
+  // Populate and wire the language selector. Persists to users.json
+  // via POST /u/:token/locale so the choice follows the user across
+  // devices, then reloads to pick up the new dictionary.
+  function initLocaleSelector() {
+    const sel = document.getElementById("locale-select");
+    if (!sel || AVAILABLE_LOCALES.length <= 1) {
+      // Hide the whole row when only one locale is available
+      const row = sel?.closest(".locale-row");
+      if (row) row.style.display = "none";
+      return;
+    }
+    sel.innerHTML = AVAILABLE_LOCALES
+      .map((code) => `<option value="${code}"${code === CURRENT_LANG ? " selected" : ""}>${code}</option>`)
+      .join("");
+    sel.addEventListener("change", async () => {
+      const lang = sel.value;
+      if (lang === CURRENT_LANG) return;
+      sel.disabled = true;
+      try {
+        const r = await fetch(`${BASE}/locale`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ locale: lang }),
+        });
+        const data = await r.json();
+        if (!r.ok || !data.success) {
+          throw new Error(data.error || "failed");
+        }
+        location.reload();
+      } catch (err) {
+        showToast(err.message, "error");
+        sel.value = CURRENT_LANG;
+        sel.disabled = false;
+      }
+    });
   }
 
   function showAuthCard(mode) {

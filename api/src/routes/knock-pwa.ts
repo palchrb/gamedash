@@ -28,9 +28,9 @@ import { z } from "zod";
 import { asyncH } from "../middleware/async-handler";
 import { HttpError } from "../middleware/error-handler";
 import { clientIp, isInIgnoredRange, isValidPublicIP } from "../lib/ip";
-import { getDictForClient, resolveLang } from "../lib/i18n";
+import { getDictForClient, listAvailableLocales, resolveLang } from "../lib/i18n";
 import { knockUser, revokeUser } from "../knock/smart-revoke";
-import { findByToken, listUsers } from "../repos/users";
+import { findByToken, listUsers, updateUser } from "../repos/users";
 import { findRuleByUserId, loadRules } from "../repos/firewall-rules";
 import { summarizeUser } from "../repos/stats";
 import { listAllConnections } from "../firewall/connections";
@@ -165,6 +165,7 @@ export function knockPwaRouter(): Router {
         services,
         token: req.params["token"],
         lang,
+        availableLocales: listAvailableLocales(),
         requirePasskey: c.KNOCK_REQUIRE_PASSKEY,
         hasCredentials: user.credentials.length > 0,
         registrationOpen: isRegistrationOpen(user),
@@ -328,6 +329,27 @@ export function knockPwaRouter(): Router {
       await requireKnockAuthIfEnabled(user, req.params["token"] ?? "", req, res);
       const r = await revokeUser(user.id);
       res.json({ success: true, ...r });
+    }),
+  );
+
+  // Self-service language change. Persists to users.json so the choice
+  // sticks across devices and survives a re-render. Validates the
+  // locale is one we ship a dictionary for, otherwise the resolveLang
+  // fallback would silently revert to DEFAULT_LOCALE on next load.
+  const LocaleBodySchema = z.object({
+    locale: z.string().min(1).max(16),
+  });
+  router.post(
+    "/u/:token/locale",
+    asyncH(async (req, res) => {
+      const user = await userFromToken(req.params["token"]);
+      const body = LocaleBodySchema.parse(req.body);
+      const lang = body.locale.toLowerCase();
+      if (!listAvailableLocales().includes(lang)) {
+        throw new HttpError(400, "unknown locale");
+      }
+      await updateUser(user.id, { locale: lang });
+      res.json({ success: true, locale: lang });
     }),
   );
 
