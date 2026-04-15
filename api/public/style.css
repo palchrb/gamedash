@@ -384,6 +384,15 @@ h3 {
   align-items: center;
   gap: 12px;
 }
+.locale-select {
+  background: #1a1a2e;
+  color: #e0e0e0;
+  border: 1px solid #0f3460;
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+}
 .service-select {
   background: #2a2a44;
   color: #e0e0e0;

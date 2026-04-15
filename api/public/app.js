@@ -3,6 +3,7 @@ const API = window.location.origin;
 // ---- i18n -----------------------------------------------------------------
 let I18N = {};
 let CURRENT_LANG = "en";
+let AVAILABLE_LOCALES = ["en"];
 
 async function loadI18n() {
   try {
@@ -10,6 +11,7 @@ async function loadI18n() {
     const data = await res.json();
     I18N = data.dict || {};
     CURRENT_LANG = data.lang || "en";
+    AVAILABLE_LOCALES = data.available || ["en"];
     document.documentElement.lang = CURRENT_LANG;
     applyI18n();
   } catch (err) {
@@ -1328,10 +1330,46 @@ function loadPlayerOverview() {
   refreshPlayActive();
 }
 
+// ---- Admin locale selector (persisted on AdminRecord) ------------------
+function initAdminLocaleSelector() {
+  const sel = document.getElementById("admin-locale-select");
+  if (!sel) return;
+  if (AVAILABLE_LOCALES.length <= 1) {
+    sel.style.display = "none";
+    return;
+  }
+  sel.innerHTML = AVAILABLE_LOCALES
+    .map((code) => `<option value="${code}"${code === CURRENT_LANG ? " selected" : ""}>${code}</option>`)
+    .join("");
+  sel.addEventListener("change", async () => {
+    const lang = sel.value;
+    if (lang === CURRENT_LANG) return;
+    sel.disabled = true;
+    try {
+      const r = await fetch("/admin/api/admin/locale", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ locale: lang }),
+      });
+      const data = await r.json();
+      if (!r.ok || !data.success) {
+        throw new Error(data.error || "failed");
+      }
+      location.reload();
+    } catch (err) {
+      toast(err.message, "error");
+      sel.value = CURRENT_LANG;
+      sel.disabled = false;
+    }
+  });
+}
+
 // ---- Dashboard boot (called after successful login) ---------------------
 async function bootApp() {
   initTabs();
   initPlayTab();
+  initAdminLocaleSelector();
   await loadServices();
   // Services tab is active by default — load its data
   refreshStatus();

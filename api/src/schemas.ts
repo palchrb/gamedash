@@ -217,6 +217,7 @@ export const AdminRecordSchema = z.object({
   credentials: z.array(WebAuthnCredentialSchema),
   createdAt: IsoTimestampSchema,
   inviteTokenHash: z.string().nullable().optional(),
+  locale: z.string().nullable().optional(),
 });
 export type AdminRecord = z.infer<typeof AdminRecordSchema>;
 
