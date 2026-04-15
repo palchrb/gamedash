@@ -366,9 +366,14 @@ export class ImpostorAdapter extends GenericAdapter {
     // to the lobby list in the PWA.
     const gamesArr = [...this.games.values()];
     const allNames = gamesArr.flatMap((g) => g.players.map((p) => p.name));
+    // Only NotStarted lobbies are joinable — once a game enters
+    // Starting/Started, the client locks and the code is useless. Keep
+    // the players in aggregate counts but don't surface dead codes in
+    // the PWA lobby list.
+    const joinable = gamesArr.filter((g) => g.state === "NotStarted");
     const visibleGames = this.showPrivateGames
-      ? gamesArr
-      : gamesArr.filter((g) => g.isPublic);
+      ? joinable
+      : joinable.filter((g) => g.isPublic);
     const gamesView = visibleGames.map((g) => ({
       code: g.code,
       host: g.hostName,
@@ -380,7 +385,8 @@ export class ImpostorAdapter extends GenericAdapter {
       map: MAP_NAMES[g.mapId] ?? `Map ${g.mapId}`,
       impostors: g.numImpostors,
     }));
-    const privateHidden = gamesArr.length - visibleGames.length;
+    const privateHidden = joinable.length - visibleGames.length;
+    const inProgress = gamesArr.length - joinable.length;
 
     return {
       running: true,
@@ -389,6 +395,8 @@ export class ImpostorAdapter extends GenericAdapter {
         ...base.details,
         adminApiConnected: this.connected,
         gameCount: gamesArr.length,
+        joinableGames: joinable.length,
+        inProgressGames: inProgress,
         publicGames: gamesArr.filter((g) => g.isPublic).length,
         privateGamesHidden: privateHidden,
         totalPlayers: gamesArr.reduce((s, g) => s + g.playerCount, 0),
