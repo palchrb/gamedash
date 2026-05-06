@@ -301,17 +301,30 @@ runs on the compose-internal network only, never mesh-exposed.
 1. **Install Tailscale** (or WireGuard) on both the main node and the
    game node. Verify they can reach each other by mesh IP.
 
-2. **On the game node**, create a compose stack from the included
+2. **Generate a sidecar token** for the game node. This is a shared
+   secret that authenticates all control-plane traffic between the main
+   node and the game node's sidecar. Generate one per node:
+
+   ```bash
+   openssl rand -hex 32
+   ```
+
+   The **same token value** must appear in two places: as `SIDECAR_TOKEN`
+   in the game node's compose env, and as `sidecarToken` in the main
+   node's `services.json`. If they don't match, every request gets a 403.
+
+3. **On the game node**, create a compose stack from the included
    example. Replace `100.64.1.8` with the game node's mesh IP and set
-   a strong `SIDECAR_TOKEN`:
+   `SIDECAR_TOKEN` to the value you generated above:
 
    ```bash
    cp docker-compose.gamenode.yml /opt/game-node/docker-compose.yml
-   # edit: set mesh IP, token, uncomment/add game containers
+   # edit: set mesh IP and SIDECAR_TOKEN, uncomment/add game containers
    cd /opt/game-node && docker compose up -d
    ```
 
-3. **On the main node**, add the remote node to `data/services.json`:
+4. **On the main node**, add the remote node to `data/services.json`
+   with the same token:
 
    ```jsonc
    {
@@ -323,7 +336,7 @@ runs on the compose-internal network only, never mesh-exposed.
        },
        "game-vps": {
          "sidecarUrl": "http://100.64.1.8:9090",
-         "sidecarToken": "same-token-as-game-node"
+         "sidecarToken": "paste-the-same-token-from-step-2-here"
        }
      },
      "services": [
@@ -338,7 +351,7 @@ runs on the compose-internal network only, never mesh-exposed.
    }
    ```
 
-4. Restart gamedash on the main node.
+5. Restart gamedash on the main node.
 
 #### Important notes
 
