@@ -1,0 +1,66 @@
+# Game-node compose — runs on a remote machine, no gamedash dashboard.
+#
+# The main gamedash instance reaches this node's sidecar over a mesh
+# network (Tailscale / WireGuard). Only the sidecar port (9090) is
+# mesh-exposed; docker-proxy lives on the internal compose network.
+#
+# IMPORTANT:
+#   - Replace 100.64.1.8 with your node's actual Tailscale/WireGuard IP.
+#   - NEVER bind the sidecar to 0.0.0.0 — it would be reachable from
+#     the public internet without authentication beyond the bearer token.
+#   - docker-proxy has NO ports: section. It must not be mesh-exposed.
+#     The sidecar is the only authorized gateway to Docker on this node.
+#   - Set SIDECAR_TOKEN to a strong random value. The same value goes
+#     into the main node's services.json under nodes.<id>.sidecarToken.
+#
+# On the main node's services.json, add:
+#   "nodes": {
+#     "game-node": {
+#       "sidecarUrl": "http://100.64.1.8:9090",
+#       "sidecarToken": "<same token as below>"
+#     }
+#   }
+#   and set "node": "game-node" on each service that runs here.
+
+services:
+  gamedash-sidecar:
+    image: ghcr.io/palchrb/gamedash/sidecar:latest
+    restart: unless-stopped
+    privileged: true
+    pid: host
+    environment:
+      SIDECAR_TOKEN: "${SIDECAR_TOKEN}"
+      DOCKER_PROXY_URL: "http://docker-proxy:2375"
+      NODE_ENV: "production"
+    ports:
+      - "100.64.1.8:9090:9090"           # bind to mesh IP ONLY
+
+  docker-proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    restart: unless-stopped
+    environment:
+      CONTAINERS: 1
+      POST: 1
+      EXEC: 0
+      VOLUMES: 0
+      IMAGES: 0
+      NETWORKS: 0
+      BUILD: 0
+      COMMIT: 0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    # NO ports: — compose-internal only, reached by sidecar
+
+  # ── Example: Among Us (Impostor) ──────────────────────────────────
+  # Uncomment and adjust for your game server.
+  #
+  # impostor:
+  #   image: ghcr.io/impostor/impostor:latest
+  #   restart: unless-stopped
+  #   ports:
+  #     - "22023:22023/udp"               # game traffic, public
+  #     - "22023:22023/tcp"
+  #     - "100.64.1.8:8081:8081"          # AdminApi, mesh-only
+  #   volumes:
+  #     - ./impostor/plugins:/app/plugins
+  #     - ./impostor/config.json:/app/config.json

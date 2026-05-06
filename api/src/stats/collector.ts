@@ -12,6 +12,7 @@ import { listAllConnections } from "../firewall/connections";
 import { loadRules } from "../repos/firewall-rules";
 import { ensureBucket, mutateStats, todayKey } from "../repos/stats";
 import { logger } from "../logger";
+import { registry } from "../services/registry";
 import type { PortSpec } from "../schemas";
 
 const COLLECTOR_INTERVAL_MS = 60_000;
@@ -48,6 +49,7 @@ export class StatsCollector {
     interface RuleEntry {
       userId: string;
       serviceId: string;
+      nodeId: string;
       ports: PortSpec[];
       ips: string[];
     }
@@ -58,6 +60,7 @@ export class StatsCollector {
         entries.push({
           userId: rule.userId,
           serviceId: svc.id,
+          nodeId: svc.node ?? "local",
           ports: svc.ports,
           ips: rule.ips,
         });
@@ -65,23 +68,11 @@ export class StatsCollector {
     }
     if (entries.length === 0) return;
 
-    // One batched kernel query for every port anyone cares about.
-    const seenPorts = new Set<string>();
-    const allPorts: PortSpec[] = [];
-    for (const e of entries) {
-      for (const p of e.ports) {
-        const key = `${p.port}/${p.proto}`;
-        if (seenPorts.has(key)) continue;
-        seenPorts.add(key);
-        allPorts.push(p);
-      }
-    }
-
-    const conns = await listAllConnections(allPorts);
+    const conns = await listAllConnections(registry().nodes);
     const liveByIp = new Map<string, Set<string>>();
     for (const c of conns) {
       const set = liveByIp.get(c.srcIp) ?? new Set<string>();
-      set.add(`${c.dstPort}/${c.proto}`);
+      set.add(`${c.node}|${c.dstPort}/${c.proto}`);
       liveByIp.set(c.srcIp, set);
     }
 
@@ -97,7 +88,7 @@ export class StatsCollector {
       for (const e of entries) {
         // A player is "playing" if any of the rule's IPs (v4 or v6) has
         // a live connection on one of the service's ports.
-        const wantedKeys = e.ports.map((p) => `${p.port}/${p.proto}`);
+        const wantedKeys = e.ports.map((p) => `${e.nodeId}|${p.port}/${p.proto}`);
         let playing = false;
         for (const ip of e.ips) {
           const live = liveByIp.get(ip);

@@ -48,6 +48,7 @@ export interface ServiceDescriptor {
   container: string;
   ports: PortSpec[];
   capabilities: Capability[];
+  nodeId: string;
 }
 
 export interface ServiceAdapter {
@@ -56,6 +57,7 @@ export interface ServiceAdapter {
   readonly type: string;
   readonly container: string;
   readonly ports: PortSpec[];
+  readonly nodeId: string;
   readonly mapUrl?: string;
   readonly mapProxy?: MapProxyTarget;
   readonly connectAddress?: string;

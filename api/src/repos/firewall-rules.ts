@@ -97,3 +97,25 @@ export function flattenPorts(rule: FirewallRule): PortSpec[] {
   }
   return out;
 }
+
+/** Flatten a rule's services into per-node deduplicated port lists. */
+export function flattenPortsByNode(rule: FirewallRule): Map<string, PortSpec[]> {
+  const byNode = new Map<string, PortSpec[]>();
+  for (const svc of rule.services) {
+    const nodeId = svc.node ?? "local";
+    let list = byNode.get(nodeId);
+    if (!list) {
+      list = [];
+      byNode.set(nodeId, list);
+    }
+    const seen = new Set(list.map((p) => `${p.port}/${p.proto}`));
+    for (const p of svc.ports) {
+      const key = `${p.port}/${p.proto}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        list.push({ port: String(p.port), proto: p.proto });
+      }
+    }
+  }
+  return byNode;
+}

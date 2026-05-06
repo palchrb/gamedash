@@ -24,11 +24,10 @@ vi.mock("../repos/users", () => ({
   pushHistory: vi.fn().mockResolvedValue(undefined),
 }));
 vi.mock("../firewall/connections", () => ({
-  isIpActiveOnPorts: vi.fn().mockResolvedValue({ active: false, matchCount: 0 }),
-  isAnyIpActiveOnPorts: vi.fn().mockResolvedValue({ active: false, matchCount: 0 }),
+  isAnyIpActiveForRule: vi.fn().mockResolvedValue({ active: false, matchCount: 0 }),
 }));
 
-import { isAnyIpActiveOnPorts } from "../firewall/connections";
+import { isAnyIpActiveForRule } from "../firewall/connections";
 import { knockUser, revokeUser } from "./smart-revoke";
 import { loadRules } from "../repos/firewall-rules";
 import type { UserRecord } from "../schemas";
@@ -49,11 +48,28 @@ const fakeUser: UserRecord = {
   suspended: false,
 };
 
+const fakeNodeConfig = {
+  sidecarUrl: "http://ufw-sidecar:9090",
+  sidecarToken: "test",
+};
+
 const fakeRegistry = {
   collectPorts: () => [{ port: "25565", proto: "tcp" as const }],
-  buildRuleServices: (ids: string[]) =>
-    ids.map((id) => ({ id, ports: [{ port: "25565", proto: "tcp" as const }] })),
+  collectPortsByNode: () =>
+    new Map([["local", [{ port: "25565", proto: "tcp" as const }]]]),
+  buildRuleServices: (ids?: readonly string[] | null) => {
+    const svcIds = ids && ids.length ? ids : ["mc1"];
+    return svcIds.map((id) => ({
+      id,
+      ports: [{ port: "25565", proto: "tcp" as const }],
+      node: "local",
+    }));
+  },
+  resolveNode: () => fakeNodeConfig,
+  nodes: new Map([["local", fakeNodeConfig]]),
 } as unknown as Registry;
+
+const fakeResolveNode = () => fakeNodeConfig;
 
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "gamedash-knock-"));
@@ -61,7 +77,7 @@ beforeEach(() => {
   process.env["LOG_LEVEL"] = "silent";
   resetConfigForTests();
   resetLoggerForTests();
-  vi.mocked(isAnyIpActiveOnPorts).mockResolvedValue({ active: false, matchCount: 0 });
+  vi.mocked(isAnyIpActiveForRule).mockResolvedValue({ active: false, matchCount: 0 });
 });
 
 afterEach(() => {
@@ -114,10 +130,7 @@ describe("knockUser", () => {
   });
 
   it("merges a new IP into an existing rule on overlap (same network)", async () => {
-    // First knock: only v4 is known
     await knockUser(fakeUser, ["203.0.113.1"], "all", fakeRegistry, { skipAudit: true });
-    // Second knock: client re-detects with both v4 and v6 — the v4 overlaps
-    // with the existing rule, so we merge in the v6 instead of swapping.
     const result = await knockUser(
       fakeUser,
       ["203.0.113.1", "2001:db8::1"],
@@ -150,7 +163,7 @@ describe("knockUser", () => {
 
   it("returns requires_confirm when old IP has active session", async () => {
     await knockUser(fakeUser, ["203.0.113.1"], "all", fakeRegistry, { skipAudit: true });
-    vi.mocked(isAnyIpActiveOnPorts).mockResolvedValueOnce({ active: true, matchCount: 2 });
+    vi.mocked(isAnyIpActiveForRule).mockResolvedValueOnce({ active: true, matchCount: 2 });
 
     const result = await knockUser(fakeUser, ["203.0.113.2"], "all", fakeRegistry);
     expect(result.status).toBe("requires_confirm");
@@ -158,15 +171,12 @@ describe("knockUser", () => {
     expect(result.oldIps).toEqual(["203.0.113.1"]);
     expect(result.matchCount).toBe(2);
 
-    // Rule should remain unchanged
     const rules = await loadRules();
     expect(rules.rules[0]!.ips).toEqual(["203.0.113.1"]);
   });
 
   it("swaps with force even when active session exists", async () => {
     await knockUser(fakeUser, ["203.0.113.1"], "all", fakeRegistry, { skipAudit: true });
-    // force: true bypasses the isAnyIpActiveOnPorts check entirely, so we
-    // don't set a mockResolvedValueOnce here (it would leak to the next test).
     const result = await knockUser(fakeUser, ["203.0.113.2"], "all", fakeRegistry, {
       force: true,
       skipAudit: true,
@@ -184,8 +194,6 @@ describe("knockUser", () => {
     expect(r1.status).toBe("ok");
     expect(r2.status).toBe("ok");
 
-    // The lock ensures only one rule exists for the user, regardless of
-    // which knock completed last.
     const rules = await loadRules();
     expect(rules.rules).toHaveLength(1);
   });
@@ -194,7 +202,7 @@ describe("knockUser", () => {
 describe("revokeUser", () => {
   it("removes an existing rule", async () => {
     await knockUser(fakeUser, ["203.0.113.1"], "all", fakeRegistry, { skipAudit: true });
-    const result = await revokeUser("u1");
+    const result = await revokeUser("u1", fakeResolveNode);
     expect(result.removed).toBe(true);
     expect(result.ips).toEqual(["203.0.113.1"]);
 
@@ -203,7 +211,7 @@ describe("revokeUser", () => {
   });
 
   it("returns removed: false when no rule exists", async () => {
-    const result = await revokeUser("nonexistent");
+    const result = await revokeUser("nonexistent", fakeResolveNode);
     expect(result.removed).toBe(false);
   });
 });

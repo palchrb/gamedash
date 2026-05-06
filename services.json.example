@@ -1,4 +1,17 @@
 {
+  "_comment_nodes": "Optional. If absent, a single 'local' node is synthesized from UFW_SIDECAR_URL + DOCKER_HOST env vars. For multi-node: add remote nodes here. dockerHost present = use docker CLI directly (local); absent = go via sidecar HTTP (remote).",
+  "nodes": {
+    "local": {
+      "sidecarUrl": "http://ufw-sidecar:9090",
+      "sidecarToken": "your-local-sidecar-token",
+      "dockerHost": "tcp://docker-proxy:2375"
+    },
+    "_example_remote": {
+      "sidecarUrl": "http://game-node.tailnet:9090",
+      "sidecarToken": "your-remote-sidecar-token",
+      "label": "Game VPS (Amsterdam)"
+    }
+  },
   "services": [
     {
       "id": "mc1",
