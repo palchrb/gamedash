@@ -29,7 +29,7 @@ import { registry } from "../services/registry";
 import {
   deleteRuleByUserId,
   findRuleByUserId,
-  flattenPorts,
+  flattenPortsByNode,
 } from "../repos/firewall-rules";
 import { ufwDeleteMany } from "../firewall/ufw";
 import { revokeUser } from "../knock/smart-revoke";
@@ -87,7 +87,8 @@ export function usersRouter(): Router {
       const rule = await findRuleByUserId(id);
       if (rule) {
         try {
-          await ufwDeleteMany(rule.ips, flattenPorts(rule));
+          const resolveNode = (nodeId: string) => registry().resolveNode(nodeId);
+          await ufwDeleteMany(rule.ips, flattenPortsByNode(rule), resolveNode);
         } catch {
           // logged inside
         }
@@ -118,7 +119,7 @@ export function usersRouter(): Router {
     asyncH(async (req, res) => {
       const id = req.params["id"];
       if (!id) throw new HttpError(400, "missing id");
-      const r = await revokeUser(id);
+      const r = await revokeUser(id, (nodeId: string) => registry().resolveNode(nodeId));
       res.json({ success: true, ...r });
     }),
   );
@@ -131,7 +132,7 @@ export function usersRouter(): Router {
       const user = await findById(id);
       if (!user) throw new HttpError(404, "user not found");
       // Revoke active firewall rule so the player is immediately cut off.
-      await revokeUser(id);
+      await revokeUser(id, (nodeId: string) => registry().resolveNode(nodeId));
       await suspendUser(id);
       await audit({ kind: "user.suspend", userId: id, name: user.name });
       res.json({ success: true });

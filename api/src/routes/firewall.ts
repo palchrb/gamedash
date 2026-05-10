@@ -14,7 +14,7 @@ import { FirewallAddBodySchema, FirewallRemoveBodySchema } from "../schemas";
 import {
   deleteRuleByIp,
   findRuleByIp,
-  flattenPorts,
+  flattenPortsByNode,
   loadRules,
   upsertRule,
 } from "../repos/firewall-rules";
@@ -70,9 +70,10 @@ export function firewallRouter(): Router {
           throw new HttpError(409, "IP already in allowlist");
         }
       }
-      const ports = registry().collectPorts(body.services ?? null);
-      if (ports.length === 0) throw new HttpError(400, "no ports resolved");
-      const errors = await ufwAllowMany(ips, ports);
+      const portsByNode = registry().collectPortsByNode(body.services ?? null);
+      if (portsByNode.size === 0) throw new HttpError(400, "no ports resolved");
+      const resolveNode = (nodeId: string) => registry().resolveNode(nodeId);
+      const errors = await ufwAllowMany(ips, portsByNode, resolveNode);
       await upsertRule({
         ips,
         addedAt: new Date().toISOString(),
@@ -130,7 +131,8 @@ export function firewallRouter(): Router {
     asyncH(async (req, res) => {
       const adminId = req.adminId;
       if (!adminId) throw new HttpError(401, "admin session required");
-      const result = await revokeAdmin(adminId);
+      const resolveNode = (nodeId: string) => registry().resolveNode(nodeId);
+      const result = await revokeAdmin(adminId, resolveNode);
       res.json({ success: true, removed: result.removed, ips: result.ips ?? [] });
     }),
   );
@@ -152,7 +154,8 @@ export function firewallRouter(): Router {
         if (rule) break;
       }
       if (!rule) throw new HttpError(404, "IP not in allowlist");
-      await ufwDeleteMany(rule.ips, flattenPorts(rule));
+      const resolveNode = (nodeId: string) => registry().resolveNode(nodeId);
+      await ufwDeleteMany(rule.ips, flattenPortsByNode(rule), resolveNode);
       for (const ip of rule.ips) {
         await deleteRuleByIp(ip);
       }
@@ -166,12 +169,11 @@ export function firewallRouter(): Router {
     asyncH(async (_req, res) => {
       const fw = await loadRules();
       const users = await listUsers();
-      const allPorts = registry().collectPorts();
-      const conns = await listAllConnections(allPorts);
+      const conns = await listAllConnections(registry().nodes);
       const liveByIp = new Map<string, Set<string>>();
       for (const c of conns) {
         const set = liveByIp.get(c.srcIp) ?? new Set<string>();
-        set.add(`${c.dstPort}/${c.proto}`);
+        set.add(`${c.node}|${c.dstPort}/${c.proto}`);
         liveByIp.set(c.srcIp, set);
       }
 
@@ -215,8 +217,9 @@ export function firewallRouter(): Router {
         }
         const services = u.allowedServices.map((sid) => {
           const adapter = registry().get(sid);
+          const nodeId = adapter?.nodeId ?? "local";
           const ports = adapter?.ports ?? [];
-          const connected = ports.some((p) => live.has(`${p.port}/${p.proto}`));
+          const connected = ports.some((p) => live.has(`${nodeId}|${p.port}/${p.proto}`));
           return {
             id: sid,
             name: adapter?.name ?? sid,
@@ -240,13 +243,12 @@ export function firewallRouter(): Router {
       const adminRules = fw.rules.filter(
         (r) => !r.userId || !userRuleIds.has(r.userId),
       );
-      // Only include rules that look like admin knock rules (no userId).
       const adminFile = await loadAdminCredentials();
       const adminNameMap = new Map(
         adminFile.admins.map((a) => [a.id, a.name]),
       );
       for (const rule of adminRules) {
-        if (rule.userId) continue; // skip orphan player rules
+        if (rule.userId) continue;
         const ips = rule.ips ?? [];
         const live = new Set<string>();
         for (const ip of ips) {
@@ -256,8 +258,9 @@ export function firewallRouter(): Router {
         const allSvcIds = registry().list().map((s) => s.id);
         const services = allSvcIds.map((sid) => {
           const adapter = registry().get(sid);
+          const nodeId = adapter?.nodeId ?? "local";
           const ports = adapter?.ports ?? [];
-          const connected = ports.some((p) => live.has(`${p.port}/${p.proto}`));
+          const connected = ports.some((p) => live.has(`${nodeId}|${p.port}/${p.proto}`));
           return {
             id: sid,
             name: adapter?.name ?? sid,

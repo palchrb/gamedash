@@ -327,7 +327,7 @@ export function knockPwaRouter(): Router {
     asyncH(async (req, res) => {
       const user = await userFromToken(req.params["token"]);
       await requireKnockAuthIfEnabled(user, req.params["token"] ?? "", req, res);
-      const r = await revokeUser(user.id);
+      const r = await revokeUser(user.id, (nodeId: string) => registry().resolveNode(nodeId));
       res.json({ success: true, ...r });
     }),
   );
@@ -380,12 +380,11 @@ export function knockPwaRouter(): Router {
       await userFromToken(req.params["token"]); // validate token
       const fw = await loadRules();
       const users = await listUsers();
-      const allPorts = registry().collectPorts();
-      const conns = await listAllConnections(allPorts);
+      const conns = await listAllConnections(registry().nodes);
       const liveByIp = new Map<string, Set<string>>();
       for (const c of conns) {
         const set = liveByIp.get(c.srcIp) ?? new Set<string>();
-        set.add(`${c.dstPort}/${c.proto}`);
+        set.add(`${c.node}|${c.dstPort}/${c.proto}`);
         liveByIp.set(c.srcIp, set);
       }
 
@@ -422,7 +421,8 @@ export function knockPwaRouter(): Router {
         const services = u.allowedServices.map((sid) => {
           const adapter = registry().get(sid);
           const ports = adapter?.ports ?? [];
-          const connected = ports.some((p) => live.has(`${p.port}/${p.proto}`));
+          const nodeId = adapter?.nodeId ?? "local";
+          const connected = ports.some((p) => live.has(`${nodeId}|${p.port}/${p.proto}`));
           return {
             id: sid,
             name: adapter?.name ?? sid,

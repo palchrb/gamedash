@@ -363,7 +363,7 @@ export function portalRouter(): Router {
     requirePortalSession,
     asyncH(async (req, res) => {
       const user = getPortalUser(req);
-      const r = await revokeUser(user.id);
+      const r = await revokeUser(user.id, (nodeId: string) => registry().resolveNode(nodeId));
       res.json({ success: true, ...r });
     }),
   );
@@ -392,26 +392,21 @@ export function portalRouter(): Router {
     asyncH(async (_req, res) => {
       const fw = await loadRules();
       const users = await listUsers();
-      const allPorts = registry().collectPorts();
-      const conns = await listAllConnections(allPorts);
+      const conns = await listAllConnections(registry().nodes);
       const liveByIp = new Map<string, Set<string>>();
       for (const c of conns) {
         const set = liveByIp.get(c.srcIp) ?? new Set<string>();
-        set.add(`${c.dstPort}/${c.proto}`);
+        set.add(`${c.node}|${c.dstPort}/${c.proto}`);
         liveByIp.set(c.srcIp, set);
       }
 
       const playersByService: Record<string, string[]> = {};
       for (const svc of registry().services.values()) {
-        if (svc.hasCapability("rcon") && svc.isRconConnected?.()) {
+        if (svc.hasCapability("players")) {
           try {
-            const r = await svc.rconSend!("list");
-            const m = r.match(/There are \d+ of a max of \d+ players online:(.*)/u);
-            if (m && m[1]) {
-              playersByService[svc.id] = m[1]
-                .split(",")
-                .map((p) => p.trim())
-                .filter(Boolean);
+            const st = await svc.status();
+            if (st.players.length > 0) {
+              playersByService[svc.id] = st.players;
             }
           } catch {
             // ignore
@@ -429,8 +424,9 @@ export function portalRouter(): Router {
         }
         const services = u.allowedServices.map((sid) => {
           const adapter = registry().get(sid);
+          const nodeId = adapter?.nodeId ?? "local";
           const ports = adapter?.ports ?? [];
-          const connected = ports.some((p) => live.has(`${p.port}/${p.proto}`));
+          const connected = ports.some((p) => live.has(`${nodeId}|${p.port}/${p.proto}`));
           return {
             id: sid,
             name: adapter?.name ?? sid,

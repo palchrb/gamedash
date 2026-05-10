@@ -1,13 +1,12 @@
 /**
- * UFW sidecar client — replaces the old nsenter-via-docker-exec approach
- * with HTTP calls to the dedicated sidecar API.
+ * UFW sidecar client — HTTP calls to a per-node sidecar API for
+ * firewall mutations and connection queries.
  *
- * The sidecar runs as a privileged container with pid:host and exposes
- * a strict HTTP API for firewall mutations and connection queries.
- * The dashboard no longer needs the docker socket for these operations.
+ * Every export takes an explicit NodeConfig so the caller controls
+ * which node the request targets. No global config dependency.
  */
 
-import { config } from "../config";
+import type { NodeConfig } from "../schemas";
 
 export interface SidecarResponse {
   success: boolean;
@@ -15,21 +14,17 @@ export interface SidecarResponse {
   raw?: string;
 }
 
-function baseUrl(): string {
-  return config().UFW_SIDECAR_URL;
-}
-
 async function sidecarFetch(
+  node: NodeConfig,
   path: string,
   opts: { method?: string; body?: unknown; timeoutMs?: number } = {},
 ): Promise<SidecarResponse> {
-  const url = `${baseUrl()}${path}`;
+  const url = `${node.sidecarUrl}${path}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 15_000);
   try {
     const headers: Record<string, string> = {};
-    const token = config().UFW_SIDECAR_TOKEN;
-    if (token) headers["x-sidecar-token"] = token;
+    if (node.sidecarToken) headers["x-sidecar-token"] = node.sidecarToken;
     if (opts.body) headers["Content-Type"] = "application/json";
     const res = await fetch(url, {
       method: opts.method ?? "GET",
@@ -50,33 +45,37 @@ async function sidecarFetch(
 // ── Public API (consumed by firewall/ufw.ts and firewall/connections.ts) ──
 
 export async function sidecarUfwAllow(
+  node: NodeConfig,
   ip: string,
   port: string,
   proto: "tcp" | "udp",
 ): Promise<void> {
-  await sidecarFetch("/ufw/allow", {
+  await sidecarFetch(node, "/ufw/allow", {
     method: "POST",
     body: { ip, port, proto },
+    timeoutMs: 5_000,
   });
 }
 
 export async function sidecarUfwDelete(
+  node: NodeConfig,
   ip: string,
   port: string,
   proto: "tcp" | "udp",
 ): Promise<void> {
-  await sidecarFetch("/ufw/delete", {
+  await sidecarFetch(node, "/ufw/delete", {
     method: "POST",
     body: { ip, port, proto },
+    timeoutMs: 5_000,
   });
 }
 
-export async function sidecarTcpConnections(): Promise<string> {
-  const res = await sidecarFetch("/connections/tcp", { timeoutMs: 5_000 });
+export async function sidecarTcpConnections(node: NodeConfig): Promise<string> {
+  const res = await sidecarFetch(node, "/connections/tcp", { timeoutMs: 3_000 });
   return res.raw ?? "";
 }
 
-export async function sidecarUdpConnections(): Promise<string> {
-  const res = await sidecarFetch("/connections/udp", { timeoutMs: 5_000 });
+export async function sidecarUdpConnections(node: NodeConfig): Promise<string> {
+  const res = await sidecarFetch(node, "/connections/udp", { timeoutMs: 3_000 });
   return res.raw ?? "";
 }

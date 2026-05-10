@@ -7,31 +7,27 @@
  *   - stats collector (accumulate per-user playtime)
  *   - /api/active-sessions endpoint
  *
- * We batch: one sidecar call for TCP + one for UDP regardless of how many
- * users / services are configured. Missing conntrack (UDP) degrades
- * gracefully — TCP games still work.
+ * In multi-node mode we fan out to each node's sidecar and tag every
+ * LiveConnection with the node it came from. Caching is per-node so a
+ * flaky remote node doesn't invalidate local results.
  */
 
 import { logger } from "../logger";
 import { sidecarTcpConnections, sidecarUdpConnections } from "../lib/nsenter";
-import type { PortSpec } from "../schemas";
+import type { FirewallRule, NodeConfig, PortSpec } from "../schemas";
 
 export interface LiveConnection {
   srcIp: string;
   dstPort: string;
   proto: "tcp" | "udp";
+  node: string;
 }
 
-// ── Short-lived cache for kernel connection queries ───────────────────
-// Multiple callers (stats collector, active-sessions endpoint, knock PWA)
-// can hit listAllConnections() within the same few seconds. The kernel
-// state doesn't change meaningfully within a 5-second window, so we
-// cache the raw (unfiltered) result and reuse it.
+// ── Per-node cache ─────────────────────────────────────────────────────
 const CONN_CACHE_TTL_MS = 5_000;
-let _connCache: { data: LiveConnection[]; expiresAt: number } | null = null;
+const _connCache = new Map<string, { data: LiveConnection[]; expiresAt: number }>();
 
-export async function listEstablishedTcp(): Promise<LiveConnection[]> {
-  const stdout = await sidecarTcpConnections();
+function parseTcp(stdout: string, nodeId: string): LiveConnection[] {
   if (!stdout) return [];
   const out: LiveConnection[] = [];
   for (const line of stdout.split("\n")) {
@@ -43,53 +39,62 @@ export async function listEstablishedTcp(): Promise<LiveConnection[]> {
     const localPort = parseLastColon(local);
     const peerHost = stripPort(peer);
     if (!localPort || !peerHost) continue;
-    out.push({ srcIp: peerHost, dstPort: localPort, proto: "tcp" });
+    out.push({ srcIp: peerHost, dstPort: localPort, proto: "tcp", node: nodeId });
   }
   return out;
 }
 
-export async function listUdpFlows(): Promise<LiveConnection[]> {
-  const stdout = await sidecarUdpConnections();
+function parseUdp(stdout: string, nodeId: string): LiveConnection[] {
   if (!stdout) return [];
   const out: LiveConnection[] = [];
   for (const line of stdout.split("\n")) {
-    // Accept both IPv4 (`udp 17 29 src=1.2.3.4 ...`) and IPv6
-    // (`ipv6 10 udp 17 29 src=2001:db8::1 ...`) conntrack output.
-    // A plain `startsWith("udp")` would drop all IPv6 flows.
     if (!/(^|\s)udp(\s|$)/u.test(line)) continue;
-    // `src=` value runs until the next whitespace — covers both dotted
-    // IPv4 and colon-hex IPv6. Non-global .match() returns the first
-    // occurrence, which is the original (client→server) tuple.
     const srcMatch = line.match(/src=(\S+)/u);
     const dportMatch = line.match(/dport=(\d+)/u);
     if (!srcMatch || !dportMatch) continue;
-    out.push({ srcIp: srcMatch[1]!, dstPort: dportMatch[1]!, proto: "udp" });
+    out.push({ srcIp: srcMatch[1]!, dstPort: dportMatch[1]!, proto: "udp", node: nodeId });
   }
   return out;
 }
 
-async function fetchAllConnections(): Promise<LiveConnection[]> {
+async function fetchNodeConnections(
+  nodeId: string,
+  node: NodeConfig,
+): Promise<LiveConnection[]> {
   const now = Date.now();
-  if (_connCache && _connCache.expiresAt > now) return _connCache.data;
+  const cached = _connCache.get(nodeId);
+  if (cached && cached.expiresAt > now) return cached.data;
+
   const [tcp, udp] = await Promise.all([
-    listEstablishedTcp().catch((err: Error) => {
-      logger().warn({ err: err.message }, "ss query failed");
-      return [] as LiveConnection[];
+    sidecarTcpConnections(node).catch((err: Error) => {
+      logger().warn({ node: nodeId, err: err.message }, "ss query failed");
+      return "";
     }),
-    listUdpFlows().catch((err: Error) => {
-      logger().warn({ err: err.message }, "conntrack query failed");
-      return [] as LiveConnection[];
+    sidecarUdpConnections(node).catch((err: Error) => {
+      logger().warn({ node: nodeId, err: err.message }, "conntrack query failed");
+      return "";
     }),
   ]);
-  const data = [...tcp, ...udp];
-  _connCache = { data, expiresAt: now + CONN_CACHE_TTL_MS };
+
+  const data = [...parseTcp(tcp, nodeId), ...parseUdp(udp, nodeId)];
+  _connCache.set(nodeId, { data, expiresAt: now + CONN_CACHE_TTL_MS });
   return data;
 }
 
+/**
+ * Fan out to all given nodes and return a unified, node-tagged connection list.
+ * Optionally filter to only the ports we care about.
+ */
 export async function listAllConnections(
+  nodeConfigs: ReadonlyMap<string, NodeConfig>,
   filterPorts?: readonly PortSpec[],
 ): Promise<LiveConnection[]> {
-  const all = await fetchAllConnections();
+  const results = await Promise.all(
+    Array.from(nodeConfigs.entries()).map(([nodeId, node]) =>
+      fetchNodeConnections(nodeId, node),
+    ),
+  );
+  const all = results.flat();
   if (!filterPorts || filterPorts.length === 0) return all;
   const wanted = new Set(filterPorts.map((p) => `${p.port}/${p.proto}`));
   return all.filter((c) => wanted.has(`${c.dstPort}/${c.proto}`));
@@ -100,33 +105,51 @@ export interface ActiveCheckResult {
   matchCount: number;
 }
 
-export async function isIpActiveOnPorts(
-  ip: string,
-  ports: readonly PortSpec[],
-): Promise<ActiveCheckResult> {
-  if (!ip || ports.length === 0) return { active: false, matchCount: 0 };
-  const conns = await listAllConnections(ports);
-  const matches = conns.filter((c) => c.srcIp === ip);
-  return { active: matches.length > 0, matchCount: matches.length };
-}
-
 /**
- * Multi-IP variant: returns active if *any* of the given IPs has a live
- * connection on the given ports. Used by smart-revoke on dual-stack
- * rules (v4 + v6) — if the game client is still connected over either
- * protocol, we shouldn't nuke the whole rule.
+ * Rule-aware active check: for each service in the rule, query its specific
+ * node's connections and match against that service's ports. Returns active
+ * if *any* of the rule's IPs has a live connection on any service/port.
  */
-export async function isAnyIpActiveOnPorts(
-  ips: readonly string[],
-  ports: readonly PortSpec[],
+export async function isAnyIpActiveForRule(
+  rule: FirewallRule,
+  resolveNode: (nodeId: string) => NodeConfig,
 ): Promise<ActiveCheckResult> {
-  if (ips.length === 0 || ports.length === 0) {
+  if (rule.ips.length === 0 || rule.services.length === 0) {
     return { active: false, matchCount: 0 };
   }
-  const conns = await listAllConnections(ports);
-  const set = new Set(ips);
-  const matches = conns.filter((c) => set.has(c.srcIp));
-  return { active: matches.length > 0, matchCount: matches.length };
+
+  const ipSet = new Set(rule.ips);
+  let totalMatches = 0;
+
+  // Group services by node to batch connection queries
+  const nodeServices = new Map<string, PortSpec[]>();
+  for (const svc of rule.services) {
+    const nodeId = svc.node ?? "local";
+    let ports = nodeServices.get(nodeId);
+    if (!ports) {
+      ports = [];
+      nodeServices.set(nodeId, ports);
+    }
+    for (const p of svc.ports) ports.push(p);
+  }
+
+  const checks = await Promise.all(
+    Array.from(nodeServices.entries()).map(async ([nodeId, ports]) => {
+      try {
+        const node = resolveNode(nodeId);
+        const conns = await fetchNodeConnections(nodeId, node);
+        const wanted = new Set(ports.map((p) => `${p.port}/${p.proto}`));
+        return conns.filter(
+          (c) => ipSet.has(c.srcIp) && wanted.has(`${c.dstPort}/${c.proto}`),
+        ).length;
+      } catch {
+        return 0;
+      }
+    }),
+  );
+
+  totalMatches = checks.reduce((a, b) => a + b, 0);
+  return { active: totalMatches > 0, matchCount: totalMatches };
 }
 
 function parseLastColon(addr: string): string | null {

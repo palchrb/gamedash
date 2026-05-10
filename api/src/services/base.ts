@@ -6,7 +6,7 @@
  * via the docker CLI available in the dashboard container.
  */
 
-import { runCmd } from "../lib/exec";
+import { registry } from "./registry";
 import type {
   Capability,
   MapProxyTarget,
@@ -17,7 +17,6 @@ import type {
 import type { PortSpec, ServiceConfig } from "../schemas";
 
 const DOCKER_CMD_TIMEOUT_MS = 30_000;
-const DOCKER_STATUS_TIMEOUT_MS = 5_000;
 
 export class BaseAdapter implements ServiceAdapter {
   readonly id: string;
@@ -25,6 +24,7 @@ export class BaseAdapter implements ServiceAdapter {
   readonly type: string;
   readonly container: string;
   readonly ports: PortSpec[];
+  readonly nodeId: string;
   readonly mapUrl?: string;
   readonly mapProxy?: MapProxyTarget;
   readonly connectAddress?: string;
@@ -38,6 +38,7 @@ export class BaseAdapter implements ServiceAdapter {
     this.name = config.name;
     this.type = config.type;
     this.container = config.container;
+    this.nodeId = config.node ?? "local";
     this.ports = config.ports.map((p) => ({ port: String(p.port), proto: p.proto }));
     if (config.mapUrl) this.mapUrl = config.mapUrl;
     if (config.mapProxy) {
@@ -72,11 +73,12 @@ export class BaseAdapter implements ServiceAdapter {
       container: this.container,
       ports: this.ports,
       capabilities: Array.from(this.capabilities),
+      nodeId: this.nodeId,
     };
   }
 
   protected async dockerAction(action: "start" | "stop" | "restart"): Promise<string> {
-    const res = await runCmd("docker", [action, this.container], {
+    const res = await registry().dockerAction(this.nodeId, action, this.container, {
       timeoutMs: DOCKER_CMD_TIMEOUT_MS,
     });
     return res.stdout.trim();
@@ -104,16 +106,8 @@ export class BaseAdapter implements ServiceAdapter {
 
   async status(): Promise<ServiceStatus> {
     try {
-      const res = await runCmd(
-        "docker",
-        ["inspect", "--format", "{{.State.Running}}", this.container],
-        { timeoutMs: DOCKER_STATUS_TIMEOUT_MS },
-      );
-      return {
-        running: res.stdout.trim() === "true",
-        players: [],
-        details: {},
-      };
+      const { running } = await registry().dockerInspect(this.nodeId, this.container);
+      return { running, players: [], details: {} };
     } catch {
       return { running: false, players: [], details: {} };
     }
@@ -121,12 +115,7 @@ export class BaseAdapter implements ServiceAdapter {
 
   async logs(lines = 100): Promise<string[]> {
     try {
-      const res = await runCmd(
-        "docker",
-        ["logs", "--tail", String(Math.max(1, Math.floor(lines))), this.container],
-        { timeoutMs: DOCKER_STATUS_TIMEOUT_MS },
-      );
-      return (res.stdout + res.stderr).split("\n").filter(Boolean);
+      return await registry().dockerLogs(this.nodeId, this.container, lines);
     } catch {
       return [];
     }

@@ -21,6 +21,16 @@ export const IsoTimestampSchema = z
   .string()
   .datetime({ offset: true, message: "must be an ISO-8601 timestamp" });
 
+// ── Node config (multi-node) ───────────────────────────────────────────
+
+export const NodeConfigSchema = z.object({
+  sidecarUrl: z.string().url(),
+  sidecarToken: z.string().optional(),
+  dockerHost: z.string().optional(),
+  label: z.string().optional(),
+});
+export type NodeConfig = z.infer<typeof NodeConfigSchema>;
+
 // ── services.json ──────────────────────────────────────────────────────
 
 export const ServiceConfigSchema = z.object({
@@ -70,10 +80,12 @@ export const ServiceConfigSchema = z.object({
   worldsDir: z.string().optional(),
   activeWorldDir: z.string().optional(),
   currentWorldFile: z.string().optional(),
+  node: z.string().regex(/^[a-z0-9_-]+$/u, "node must be lowercase alphanumeric").optional(),
 });
 export type ServiceConfig = z.infer<typeof ServiceConfigSchema>;
 
 export const ServicesFileSchema = z.object({
+  nodes: z.record(z.string(), NodeConfigSchema).optional(),
   services: z.array(ServiceConfigSchema),
 });
 export type ServicesFile = z.infer<typeof ServicesFileSchema>;
@@ -144,10 +156,20 @@ export type UsersFile = z.infer<typeof UsersFileSchema>;
 
 // ── firewall-rules.json ────────────────────────────────────────────────
 
-export const RuleServiceSchema = z.object({
-  id: z.string(),
-  ports: z.array(PortSpecSchema),
-});
+export const RuleServiceSchema = z.preprocess(
+  (obj) => {
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const rec = obj as Record<string, unknown>;
+      if (!("node" in rec)) return { ...rec, node: "local" };
+    }
+    return obj;
+  },
+  z.object({
+    id: z.string(),
+    ports: z.array(PortSpecSchema),
+    node: z.string().default("local"),
+  }),
+);
 export type RuleService = z.infer<typeof RuleServiceSchema>;
 
 /**

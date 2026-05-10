@@ -31,6 +31,13 @@ vi.mock("../repos/firewall-rules", () => ({
   }),
 }));
 
+// Provide a minimal registry so tick() can read nodes.
+vi.mock("../services/registry", () => {
+  const fakeNode = { sidecarUrl: "http://localhost:9090", sidecarToken: "test" };
+  const r = { nodes: new Map([["local", fakeNode]]) };
+  return { registry: () => r };
+});
+
 import { StatsCollector } from "./collector";
 import { loadStats, saveStats, todayKey } from "../repos/stats";
 import type { StatsFile } from "../schemas";

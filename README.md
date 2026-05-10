@@ -261,6 +261,120 @@ e.g. `dash.example.com`) and `ADMIN_ORIGIN` (full URL,
 e.g. `https://dash.example.com`). WebAuthn refuses to register if these
 don't match the browser's address bar exactly.
 
+### Multi-node (running game servers on separate machines)
+
+By default gamedash assumes everything runs on a single host. To run
+game servers on other machines, add a `nodes` map to `services.json`
+and set `"node": "<id>"` on each service that lives on a remote machine.
+
+**Single-node users: you don't need to change anything.** If the
+`nodes` key is absent, gamedash synthesizes a `"local"` node from
+`UFW_SIDECAR_URL` and `DOCKER_HOST` automatically.
+
+#### How it works
+
+The main gamedash instance stays on the "main node" and acts as an
+orchestrator. Each game node runs a generic compose stack (the gamedash
+sidecar + a docker-socket-proxy + game containers) connected to the
+main node over a mesh network (Tailscale recommended, WireGuard also
+works). Game-client traffic goes directly from players to the game
+node's public IP — it never passes through gamedash.
+
+```
+                        ┌── mesh+token ──►  gamedash-sidecar :9090
+main gamedash  ─────────┤                   ├── UFW/ss/conntrack
+                        │                   └── docker → docker-proxy (internal)
+                        │
+                        ├── mesh ────────►  game container (RCON/AdminApi/TShock)
+
+players  ── public ──►  game container (game traffic)
+```
+
+All control-plane traffic (UFW mutations, Docker lifecycle, RCON,
+AdminApi, TShock REST) goes over the mesh. The sidecar authenticates
+every request with a bearer token (`x-sidecar-token`). Docker calls
+on remote nodes also go through the sidecar — the `docker-socket-proxy`
+runs on the compose-internal network only, never mesh-exposed.
+
+#### Setup
+
+1. **Install Tailscale** (or WireGuard) on both the main node and the
+   game node. Verify they can reach each other by mesh IP.
+
+2. **Generate a sidecar token** for the game node. This is a shared
+   secret that authenticates all control-plane traffic between the main
+   node and the game node's sidecar. Generate one per node:
+
+   ```bash
+   openssl rand -hex 32
+   ```
+
+   The **same token value** must appear in two places: as `SIDECAR_TOKEN`
+   in the game node's compose env, and as `sidecarToken` in the main
+   node's `services.json`. If they don't match, every request gets a 403.
+
+3. **On the game node**, create a compose stack from the included
+   example. Replace `100.64.1.8` with the game node's mesh IP and set
+   `SIDECAR_TOKEN` to the value you generated above:
+
+   ```bash
+   cp docker-compose.gamenode.yml /opt/game-node/docker-compose.yml
+   # edit: set mesh IP and SIDECAR_TOKEN, uncomment/add game containers
+   cd /opt/game-node && docker compose up -d
+   ```
+
+4. **On the main node**, add the remote node to `data/services.json`
+   with the same token:
+
+   ```jsonc
+   {
+     "nodes": {
+       "local": {
+         "sidecarUrl": "http://ufw-sidecar:9090",
+         "sidecarToken": "...",
+         "dockerHost": "tcp://docker-proxy:2375"
+       },
+       "game-vps": {
+         "sidecarUrl": "http://100.64.1.8:9090",
+         "sidecarToken": "paste-the-same-token-from-step-2-here"
+       }
+     },
+     "services": [
+       { "id": "mc1", "node": "local", ... },
+       {
+         "id": "impostor", "node": "game-vps",
+         "type": "impostor", "container": "impostor",
+         "impostorAdminApiUrl": "http://100.64.1.8:8081",
+         "ports": [{ "port": "22023", "proto": "udp" }]
+       }
+     ]
+   }
+   ```
+
+5. Restart gamedash on the main node.
+
+#### Important notes
+
+- **Remote services must set app-protocol URLs explicitly.** For
+  Minecraft: `rcon.host`. For Impostor: `impostorAdminApiUrl`. For
+  TShock: `tshockApiUrl`. The container-name defaults only work for
+  local services. Gamedash will refuse to load a remote service that
+  is missing the required URL.
+- **Remote nodes must have a `sidecarToken`.** Gamedash will not start
+  if a non-local node is missing its token.
+- **The sidecar refuses to start in production without a token.** Set
+  `NODE_ENV=production` (the default) and `SIDECAR_TOKEN=<value>`.
+- **Bind the sidecar to the mesh IP only** (`100.64.x.x:9090:9090`),
+  never `0.0.0.0`. The token protects against unauthorized tailnet
+  devices, but binding to `0.0.0.0` would expose the sidecar to the
+  public internet.
+- **docker-socket-proxy must not be mesh-exposed.** The game-node
+  compose has no `ports:` on docker-proxy by design. The sidecar is
+  the only gateway to Docker on the node.
+- **Tailscale ACLs are recommended.** Restrict `:9090` on game-node
+  tags to the main-node tag so other tailnet devices (kids' phones
+  etc.) can't reach the sidecar even if the token leaks.
+
 ## Operational endpoints
 
 Public (no auth, safe to probe from an orchestrator):

@@ -15,20 +15,21 @@
  *     network and merge the two sets (adding any newly-detected IPs and
  *     bumping the expiry).
  *   - Atomic firewall rule write + user history append.
+ *   - Multi-node aware: UFW mutations fan out per-node via portsByNode.
  */
 
 import { audit } from "../repos/audit";
 import { config } from "../config";
-import { isAnyIpActiveOnPorts } from "../firewall/connections";
+import { isAnyIpActiveForRule } from "../firewall/connections";
 import { ufwAllowMany, ufwDeleteMany, type UfwError } from "../firewall/ufw";
 import {
-  flattenPorts,
+  flattenPortsByNode,
   mutateRules,
 } from "../repos/firewall-rules";
 import { pushHistory } from "../repos/users";
 import { isValidPublicIP } from "../lib/ip";
 import type { Registry } from "../services/registry";
-import type { FirewallRule, UserRecord } from "../schemas";
+import type { FirewallRule, NodeConfig, UserRecord } from "../schemas";
 
 export type KnockResult =
   | {
@@ -72,6 +73,10 @@ function sanitiseIps(input: readonly string[]): string[] {
   return out;
 }
 
+function makeResolveNode(registry: Registry): (nodeId: string) => NodeConfig {
+  return (nodeId: string) => registry.resolveNode(nodeId);
+}
+
 export async function knockUser(
   user: UserRecord,
   ips: readonly string[],
@@ -90,16 +95,15 @@ export async function knockUser(
   if (serviceIds.length === 0) {
     throw new Error("No services requested or allowed");
   }
-  const portList = registry.collectPorts(serviceIds);
-  if (portList.length === 0) {
+  const portsByNode = registry.collectPortsByNode(serviceIds);
+  if (portsByNode.size === 0) {
     throw new Error("No ports configured for requested services");
   }
+  const resolveNode = makeResolveNode(registry);
 
   const c = config();
   const ttlMs = c.KNOCK_USER_TTL_HOURS * 3_600_000;
 
-  // The entire read → check → mutate cycle runs under a single firewall
-  // lock so no concurrent knock can see stale rule state (TOCTOU fix).
   return mutateRules(async (draft) => {
     const existingIdx = draft.rules.findIndex((r) => r.userId === user.id);
     const existing = existingIdx >= 0 ? draft.rules[existingIdx] ?? null : null;
@@ -107,10 +111,6 @@ export async function knockUser(
     const expiresAt = new Date(now + ttlMs).toISOString();
 
     // ── Overlap with existing rule → same network, merge + bump expiry ──
-    // Any overlap in the IP sets means the client is on the same network
-    // and one of the two stacks (v4/v6) is reachable via both knocks.
-    // We merge to a superset so a client that newly acquired an IPv6
-    // address gets it opened without losing the already-working IPv4.
     if (existing) {
       const existingSet = new Set(existing.ips);
       const overlap = newIps.some((ip) => existingSet.has(ip));
@@ -119,13 +119,12 @@ export async function knockUser(
         const addedIps = mergedIps.filter((ip) => !existingSet.has(ip));
         let errors: UfwError[] = [];
         if (addedIps.length > 0) {
-          errors = await ufwAllowMany(addedIps, portList);
+          errors = await ufwAllowMany(addedIps, portsByNode, resolveNode);
         }
         draft.rules[existingIdx] = {
           ...existing,
           ips: mergedIps,
           expiresAt,
-          // Re-bind the label in case requested services changed.
           label: `${user.name} via ${serviceIds.join(",")}`,
           services: registry.buildRuleServices(serviceIds),
         };
@@ -149,8 +148,7 @@ export async function knockUser(
 
     // ── Different network: smart-revoke check ──
     if (existing && !options.force) {
-      const oldPorts = flattenPorts(existing);
-      const active = await isAnyIpActiveOnPorts(existing.ips, oldPorts);
+      const active = await isAnyIpActiveForRule(existing, resolveNode);
       if (active.active) {
         await audit({
           kind: "knock.blocked_active_session",
@@ -172,7 +170,7 @@ export async function knockUser(
     // ── Different network: safe to swap ──
     if (existing) {
       try {
-        await ufwDeleteMany(existing.ips, flattenPorts(existing));
+        await ufwDeleteMany(existing.ips, flattenPortsByNode(existing), resolveNode);
       } catch {
         // logged inside ufwDeleteMany
       }
@@ -185,7 +183,7 @@ export async function knockUser(
       });
     }
 
-    const errors = await ufwAllowMany(newIps, portList);
+    const errors = await ufwAllowMany(newIps, portsByNode, resolveNode);
     const rule: FirewallRule = {
       ips: newIps,
       addedAt: new Date().toISOString(),
@@ -210,13 +208,16 @@ export async function knockUser(
 }
 
 /** Manually revoke a user's active rule (admin or self-service). */
-export async function revokeUser(userId: string): Promise<{ removed: boolean; ips?: string[] }> {
+export async function revokeUser(
+  userId: string,
+  resolveNode: (nodeId: string) => NodeConfig,
+): Promise<{ removed: boolean; ips?: string[] }> {
   return mutateRules(async (draft) => {
     const idx = draft.rules.findIndex((r) => r.userId === userId);
     if (idx < 0) return { removed: false };
     const rule = draft.rules[idx]!;
     try {
-      await ufwDeleteMany(rule.ips, flattenPorts(rule));
+      await ufwDeleteMany(rule.ips, flattenPortsByNode(rule), resolveNode);
     } catch {
       // logged inside
     }
@@ -228,13 +229,7 @@ export async function revokeUser(userId: string): Promise<{ removed: boolean; ip
 
 /**
  * Admin self-knock — mirrors knockUser but keyed on adminId so each
- * admin has at most one auto-rule at a time. Re-knocking from a new
- * network replaces the old rule (with smart-revoke check for active
- * sessions), rather than adding a duplicate. Manual /firewall/add
- * rules (no adminId) are unaffected and can coexist.
- *
- * Admin rules have no TTL by design — admins keep the rule until they
- * explicitly revoke or re-knock from elsewhere.
+ * admin has at most one auto-rule at a time.
  */
 export async function knockAdmin(
   adminId: string,
@@ -247,16 +242,17 @@ export async function knockAdmin(
   if (newIps.length === 0) {
     throw new Error("Invalid or non-public IP address");
   }
-  const portList = registry.collectPorts();
-  if (portList.length === 0) {
+  const portsByNode = registry.collectPortsByNode();
+  if (portsByNode.size === 0) {
     throw new Error("No ports configured");
   }
+  const resolveNode = makeResolveNode(registry);
 
   return mutateRules(async (draft) => {
     const existingIdx = draft.rules.findIndex((r) => r.adminId === adminId);
     const existing = existingIdx >= 0 ? draft.rules[existingIdx] ?? null : null;
 
-    // ── Overlap (same network, e.g. v4+v6 from same ISP) → merge ──
+    // ── Overlap (same network) → merge ──
     if (existing) {
       const existingSet = new Set(existing.ips);
       const overlap = newIps.some((ip) => existingSet.has(ip));
@@ -265,7 +261,7 @@ export async function knockAdmin(
         const addedIps = mergedIps.filter((ip) => !existingSet.has(ip));
         let errors: UfwError[] = [];
         if (addedIps.length > 0) {
-          errors = await ufwAllowMany(addedIps, portList);
+          errors = await ufwAllowMany(addedIps, portsByNode, resolveNode);
         }
         draft.rules[existingIdx] = {
           ...existing,
@@ -283,8 +279,7 @@ export async function knockAdmin(
 
     // ── Different network: smart-revoke check ──
     if (existing && !options.force) {
-      const oldPorts = flattenPorts(existing);
-      const active = await isAnyIpActiveOnPorts(existing.ips, oldPorts);
+      const active = await isAnyIpActiveForRule(existing, resolveNode);
       if (active.active) {
         await audit({
           kind: "admin.knock_blocked_active_session",
@@ -306,7 +301,7 @@ export async function knockAdmin(
     // ── Swap IP ──
     if (existing) {
       try {
-        await ufwDeleteMany(existing.ips, flattenPorts(existing));
+        await ufwDeleteMany(existing.ips, flattenPortsByNode(existing), resolveNode);
       } catch {
         // logged inside
       }
@@ -319,7 +314,7 @@ export async function knockAdmin(
       });
     }
 
-    const errors = await ufwAllowMany(newIps, portList);
+    const errors = await ufwAllowMany(newIps, portsByNode, resolveNode);
     const rule: FirewallRule = {
       ips: newIps,
       addedAt: new Date().toISOString(),
@@ -334,13 +329,11 @@ export async function knockAdmin(
 }
 
 /** Revoke the admin's auto-rule (leaves manual /firewall/add rules alone). */
-export async function revokeAdmin(adminId: string): Promise<{ removed: boolean; ips?: string[] }> {
+export async function revokeAdmin(
+  adminId: string,
+  resolveNode: (nodeId: string) => NodeConfig,
+): Promise<{ removed: boolean; ips?: string[] }> {
   return mutateRules(async (draft) => {
-    // Prefer the adminId-tied rule. Fall back to legacy admin-type rules
-    // (no userId and no adminId) that pre-date the self-knock migration —
-    // removing one per call, so clicking revoke repeatedly cleans up
-    // multiple stale rules without wiping unrelated manual entries in
-    // one go.
     let idx = draft.rules.findIndex((r) => r.adminId === adminId);
     if (idx < 0) {
       idx = draft.rules.findIndex((r) => !r.userId && !r.adminId);
@@ -348,7 +341,7 @@ export async function revokeAdmin(adminId: string): Promise<{ removed: boolean; 
     if (idx < 0) return { removed: false };
     const rule = draft.rules[idx]!;
     try {
-      await ufwDeleteMany(rule.ips, flattenPorts(rule));
+      await ufwDeleteMany(rule.ips, flattenPortsByNode(rule), resolveNode);
     } catch {
       // logged inside
     }
@@ -359,11 +352,10 @@ export async function revokeAdmin(adminId: string): Promise<{ removed: boolean; 
 }
 
 /** Periodic sweep to remove expired firewall rules. */
-export async function sweepExpiredRules(): Promise<number> {
+export async function sweepExpiredRules(
+  resolveNode: (nodeId: string) => NodeConfig,
+): Promise<number> {
   const now = Date.now();
-  // UFW deletions run inside the same mutex that removes the rules from
-  // the JSON file so a crash between the two cannot leave orphaned UFW
-  // rules on the host.
   return mutateRules(async (draft) => {
     const remaining: FirewallRule[] = [];
     const expired: FirewallRule[] = [];
@@ -377,7 +369,7 @@ export async function sweepExpiredRules(): Promise<number> {
     draft.rules = remaining;
     for (const rule of expired) {
       try {
-        await ufwDeleteMany(rule.ips, flattenPorts(rule));
+        await ufwDeleteMany(rule.ips, flattenPortsByNode(rule), resolveNode);
       } catch {
         // logged inside ufwDeleteMany
       }

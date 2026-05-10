@@ -16,7 +16,7 @@ import { config } from "./config";
 import { logger } from "./logger";
 import { createApp } from "./app";
 import { installRuntimeGauges } from "./routes/ops";
-import { initRegistry, disposeRegistry } from "./services/registry";
+import { initRegistry, disposeRegistry, registry } from "./services/registry";
 import { statsCollector } from "./stats/collector";
 import { sweepExpiredRules } from "./knock/smart-revoke";
 import { rotateAuditLogIfNeeded } from "./repos/audit";
@@ -49,7 +49,8 @@ async function main(): Promise<void> {
   // Periodic firewall rule expiry sweep + admin/knock session sweep
   // + WebAuthn challenge sweep + audit log rotation (every 10 minutes).
   const sweepInterval = setInterval(() => {
-    sweepExpiredRules().catch((err: Error) =>
+    const resolveNode = (nodeId: string) => registry().resolveNode(nodeId);
+    sweepExpiredRules(resolveNode).catch((err: Error) =>
       log.warn({ err: err.message }, "sweep failed"),
     );
     sweepExpiredSessions().catch((err: Error) =>
