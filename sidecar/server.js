@@ -23,6 +23,7 @@
 "use strict";
 
 const http = require("node:http");
+const crypto = require("node:crypto");
 const { execFile } = require("node:child_process");
 const { URL } = require("node:url");
 
@@ -220,7 +221,10 @@ const server = http.createServer(async (req, res) => {
 
   try {
     if (SIDECAR_TOKEN && req.url !== "/healthz") {
-      if (req.headers["x-sidecar-token"] !== SIDECAR_TOKEN) {
+      const provided = req.headers["x-sidecar-token"] || "";
+      const a = Buffer.from(provided);
+      const b = Buffer.from(SIDECAR_TOKEN);
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
         return respond(403, { success: false, error: "forbidden" });
       }
     }

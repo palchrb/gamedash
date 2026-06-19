@@ -18,7 +18,9 @@ import {
   createAdminWithInvite,
   deleteAdmin,
   deleteAdminSessionsForAdmin,
+  findAdminById,
   listAdmins,
+  removeAdminCredential,
 } from "../repos/admin";
 import { audit } from "../repos/audit";
 import { config } from "../config";
@@ -56,6 +58,31 @@ export function adminsRouter(): Router {
         admin: { id: admin.id, name: admin.name, createdAt: admin.createdAt },
         inviteUrl,
       });
+    }),
+  );
+
+  router.delete(
+    "/api/admins/me/credentials/:credId",
+    asyncH(async (req, res) => {
+      const adminId = req.adminId;
+      if (!adminId) throw new HttpError(401, "admin session required");
+      const credId = req.params["credId"];
+      if (!credId) throw new HttpError(400, "missing credential id");
+      const admin = await findAdminById(adminId);
+      if (!admin) throw new HttpError(404, "admin not found");
+      if (admin.credentials.length <= 1) {
+        throw new HttpError(400, "cannot remove your last passkey");
+      }
+      if (!admin.credentials.some((c) => c.id === credId)) {
+        throw new HttpError(404, "credential not found");
+      }
+      await removeAdminCredential(adminId, credId);
+      await audit({
+        kind: "admin.credential_removed",
+        adminId,
+        credentialId: credId,
+      });
+      res.json({ success: true });
     }),
   );
 
