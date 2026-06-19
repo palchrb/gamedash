@@ -327,6 +327,21 @@
     </div>
   </div>
 
+    <!-- Admin passkey management modal -->
+    <div id="admin-passkey-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-box">
+        <h3>Manage passkeys</h3>
+        <p class="card-desc" id="admin-passkey-modal-name"></p>
+        <ul id="admin-passkey-list" class="firewall-list"></ul>
+        <div class="btn-group" style="margin-top:12px">
+          <button class="btn btn-green btn-sm" onclick="adminAddPasskey()">Add passkey</button>
+        </div>
+        <div class="btn-group" style="justify-content:flex-end;margin-top:16px">
+          <button class="btn" onclick="closeAdminPasskeyModal()">Close</button>
+        </div>
+      </div>
+    </div>
+
   <script src="webauthn.js"></script>
   <script src="app.js"></script>
 </body>

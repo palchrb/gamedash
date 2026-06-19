@@ -860,10 +860,11 @@ async function loadDirectory() {
           ? escapeHtml(names.join(", "))
           : `<span class="muted">${t("directory.edit_services_none")}</span>`;
       }
-      // Actions column for knock users: single "Manage" button opens modal.
       let actionsCell = `<span class="muted">—</span>`;
       if (e.kind === "knock") {
         actionsCell = `<button class="btn btn-sm" onclick="openManageModal('${escapeAttr(e.id)}')">${t("directory.manage")}</button>`;
+      } else if (e.kind === "admin" && e.id === CURRENT_ADMIN_ID) {
+        actionsCell = `<button class="btn btn-sm" onclick="openAdminPasskeyModal('${escapeAttr(e.id)}')">Manage</button>`;
       }
       return `<tr>
         <td><strong>${escapeHtml(e.name)}</strong></td>
@@ -1434,6 +1435,97 @@ async function deleteAdmin(id, name) {
     toast(`Admin "${name}" removed`, "success");
     loadAdmins();
     loadDirectory();
+  } else if (data) {
+    toast(data.error || "Failed", "error");
+  }
+}
+
+// ---- Admin passkey management -------------------------------------------
+
+function openAdminPasskeyModal(adminId) {
+  const entry = DIRECTORY_ENTRIES.find((e) => e.id === adminId && e.kind === "admin");
+  if (!entry) return;
+  document.getElementById("admin-passkey-modal-name").textContent = entry.name;
+  renderAdminPasskeyList(entry.credentials, entry.credentials.length);
+  document.getElementById("admin-passkey-modal").classList.remove("hidden");
+}
+
+function closeAdminPasskeyModal() {
+  document.getElementById("admin-passkey-modal").classList.add("hidden");
+}
+
+function renderAdminPasskeyList(credentials, total) {
+  const list = document.getElementById("admin-passkey-list");
+  if (!credentials || credentials.length === 0) {
+    list.innerHTML = '<li class="muted">No passkeys registered</li>';
+    return;
+  }
+  list.innerHTML = credentials.map((c) => {
+    const label = c.deviceLabel || "Passkey";
+    const created = new Date(c.createdAt).toLocaleDateString();
+    const lastUsed = c.lastUsedAt
+      ? new Date(c.lastUsedAt).toLocaleDateString()
+      : "never";
+    const removeBtn = total > 1
+      ? ` <button class="btn btn-sm btn-red" onclick="adminRemovePasskey('${escapeAttr(c.id)}')">Remove</button>`
+      : "";
+    return `<li class="firewall-item">
+      <span>
+        <strong>${escapeHtml(label)}</strong><br>
+        <span class="muted">Added ${created} &middot; Last used ${lastUsed}</span>
+      </span>
+      <span>${removeBtn}</span>
+    </li>`;
+  }).join("");
+}
+
+async function adminAddPasskey() {
+  if (!CURRENT_ADMIN_ID) return;
+  try {
+    const optsRes = await fetch("/admin/api/admin/webauthn/register/options", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({ adminId: CURRENT_ADMIN_ID }),
+    });
+    const optsData = await optsRes.json();
+    if (!optsRes.ok || !optsData.success) throw new Error(optsData.error || "failed to get options");
+    const att = await window.webauthnRegister(optsData.options);
+    const deviceLabel = prompt("Label for this passkey (e.g. iPhone, MacBook):", "");
+    const verifyRes = await fetch("/admin/api/admin/webauthn/register/verify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        adminId: CURRENT_ADMIN_ID,
+        response: att,
+        deviceLabel: deviceLabel || navigator.userAgent.slice(0, 60),
+      }),
+    });
+    const verifyData = await verifyRes.json();
+    if (!verifyRes.ok || !verifyData.success) throw new Error(verifyData.error || "verification failed");
+    toast("Passkey added", "success");
+    await loadDirectory();
+    const entry = DIRECTORY_ENTRIES.find((e) => e.id === CURRENT_ADMIN_ID && e.kind === "admin");
+    if (entry) renderAdminPasskeyList(entry.credentials, entry.credentials.length);
+    loadAdmins();
+  } catch (err) {
+    toast("Failed: " + err.message, "error");
+  }
+}
+
+async function adminRemovePasskey(credId) {
+  if (!CURRENT_ADMIN_ID) return;
+  if (!confirm("Remove this passkey? You won't be able to log in with it anymore.")) return;
+  const data = await api(`/admin/api/admins/me/credentials/${encodeURIComponent(credId)}`, {
+    method: "DELETE",
+  });
+  if (data && data.success) {
+    toast("Passkey removed", "success");
+    await loadDirectory();
+    const entry = DIRECTORY_ENTRIES.find((e) => e.id === CURRENT_ADMIN_ID && e.kind === "admin");
+    if (entry) renderAdminPasskeyList(entry.credentials, entry.credentials.length);
+    loadAdmins();
   } else if (data) {
     toast(data.error || "Failed", "error");
   }
