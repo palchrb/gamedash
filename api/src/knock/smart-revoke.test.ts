@@ -38,7 +38,8 @@ let tmpDir: string;
 const fakeUser: UserRecord = {
   id: "u1",
   name: "TestKid",
-  tokenHash: "abc123",
+  tokens: [{ hash: "abc123", createdAt: new Date().toISOString(), label: null }],
+  claimCode: null,
   allowedServices: ["mc1"],
   locale: null,
   createdAt: new Date().toISOString(),
