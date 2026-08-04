@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="{{LANG}}">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0b0b1a">
+  <meta name="robots" content="noindex">
+  <link rel="stylesheet" href="/my/u.css">
+  <link rel="icon" type="image/svg+xml" href="/my/icon.svg">
+  <title>Gamedash</title>
+  <style>
+    html, body { height: 100%; }
+    .claim-wrap {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      min-height: 100vh; min-height: 100dvh; padding: 24px; text-align: center;
+    }
+    .claim-card {
+      background: var(--bg-2); border-radius: var(--radius); padding: 28px 24px;
+      max-width: 380px; width: 100%; box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .claim-title {
+      font-family: 'Press Start 2P', monospace; font-size: 14px; color: var(--accent);
+      margin: 0 0 14px; line-height: 1.6;
+    }
+    .claim-intro { color: var(--muted); font-size: 14px; margin: 0 0 20px; }
+    .code-input {
+      width: 100%; padding: 14px; font-size: 24px; letter-spacing: 3px; text-align: center;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-transform: uppercase;
+      background: var(--bg); color: var(--fg); border: 2px solid #2d2d4d;
+      border-radius: 10px; outline: none;
+    }
+    .code-input:focus { border-color: var(--accent); }
+    .claim-btn {
+      width: 100%; margin-top: 16px; padding: 14px; font-size: 16px; font-weight: 700;
+      background: linear-gradient(135deg, #14532d, #16a34a); color: white;
+      border: none; border-radius: 10px; cursor: pointer;
+    }
+    .claim-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    .claim-err { color: var(--danger); font-size: 14px; min-height: 20px; margin-top: 12px; }
+    .confirm-name { font-size: 20px; font-weight: 700; margin: 6px 0 4px; }
+    .confirm-hint { color: var(--muted); font-size: 13px; margin: 0 0 18px; }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  {{INIT}}
+  <div class="claim-wrap">
+    <div class="claim-card">
+      <!-- Step 1: enter code -->
+      <div id="step-code">
+        <h1 class="claim-title" data-k="claim.title"></h1>
+        <p class="claim-intro" data-k="claim.intro"></p>
+        <input id="code" class="code-input" placeholder="ABCD-EFGH" autocomplete="off"
+               autocapitalize="characters" spellcheck="false" maxlength="9" inputmode="text">
+        <button id="continue" class="claim-btn" data-k="claim.continue"></button>
+        <div id="err1" class="claim-err"></div>
+      </div>
+      <!-- Step 2: confirm identity -->
+      <div id="step-confirm" class="hidden">
+        <h1 class="claim-title" id="confirm-for"></h1>
+        <p class="confirm-hint" data-k="claim.confirm_hint"></p>
+        <button id="connect" class="claim-btn" data-k="claim.connect"></button>
+        <div id="err2" class="claim-err"></div>
+      </div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      var I18N = window.__I18N__ || {};
+      var INIT = window.__INIT__ || {};
+      function t(k) { return I18N[k] || k; }
+      document.querySelectorAll("[data-k]").forEach(function (el) {
+        el.textContent = t(el.getAttribute("data-k"));
+      });
+
+      var codeEl = document.getElementById("code");
+      var err1 = document.getElementById("err1");
+      var err2 = document.getElementById("err2");
+      var currentCode = null;
+
+      // Display formatting: uppercase, auto-insert the dash after 4 chars.
+      codeEl.addEventListener("input", function () {
+        var raw = codeEl.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+        codeEl.value = raw.length > 4 ? raw.slice(0, 4) + "-" + raw.slice(4, 8) : raw;
+      });
+      codeEl.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") doLookup();
+      });
+
+      function normalized() {
+        return codeEl.value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+      }
+
+      async function post(path, body) {
+        var res = await fetch(path, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+        var data = null;
+        try { data = await res.json(); } catch (e) { /* ignore */ }
+        return { status: res.status, data: data || {} };
+      }
+
+      async function doLookup() {
+        err1.textContent = "";
+        var code = normalized();
+        if (code.length !== 8) { err1.textContent = t("claim.invalid"); return; }
+        var btn = document.getElementById("continue");
+        btn.disabled = true;
+        var r = await post("/c/lookup", { code: code });
+        btn.disabled = false;
+        if (r.status === 429) { err1.textContent = t("claim.locked"); return; }
+        if (!r.data.success) { err1.textContent = t("claim.invalid"); return; }
+        currentCode = code;
+        document.getElementById("confirm-for").textContent =
+          t("claim.confirm_for").replace("{name}", r.data.name);
+        document.getElementById("step-code").classList.add("hidden");
+        document.getElementById("step-confirm").classList.remove("hidden");
+      }
+
+      async function doClaim() {
+        err2.textContent = "";
+        var btn = document.getElementById("connect");
+        btn.disabled = true;
+        btn.textContent = t("claim.working");
+        var r = await post("/c/claim", { code: currentCode });
+        if (r.status === 429) {
+          btn.disabled = false; btn.textContent = t("claim.connect");
+          err2.textContent = t("claim.locked");
+          return;
+        }
+        if (!r.data.success || !r.data.token) {
+          btn.disabled = false; btn.textContent = t("claim.connect");
+          err2.textContent = t("claim.invalid");
+          return;
+        }
+        // The token lands only in the final /u/<token> URL — the PWA's
+        // canonical home — never in the /c/ URL space.
+        window.location.replace("/u/" + encodeURIComponent(r.data.token));
+      }
+
+      document.getElementById("continue").addEventListener("click", doLookup);
+      document.getElementById("connect").addEventListener("click", doClaim);
+
+      if (INIT.prefill) {
+        codeEl.value = INIT.prefill;
+        codeEl.dispatchEvent(new Event("input"));
+        doLookup();
+      } else {
+        codeEl.focus();
+      }
+    })();
+  </script>
+</body>
+</html>

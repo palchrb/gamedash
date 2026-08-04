@@ -212,5 +212,16 @@
   "players.col_status": "Status",
   "players.col_ip": "IP",
   "players.col_expires": "Utløper",
-  "players.col_actions": "Handlinger"
+  "players.col_actions": "Handlinger",
+  "claim.title": "Skriv inn tilgangskode",
+  "claim.intro": "Skriv inn koden du fikk for å koble til denne enheten.",
+  "claim.continue": "Fortsett",
+  "claim.confirm_for": "Tilgang for {name}",
+  "claim.confirm_hint": "Ikke deg? Lukk denne siden og si fra til den som styrer serveren.",
+  "claim.connect": "Koble til denne enheten",
+  "claim.invalid": "Koden virket ikke. Sjekk den og prøv igjen.",
+  "claim.locked": "For mange forsøk. Prøv igjen om en liten stund.",
+  "claim.working": "Kobler til…",
+  "claim.none_title": "Ingen aktiv kode",
+  "claim.none_body": "Det er ingen delingskode aktiv akkurat nå. Be den som styrer serveren lage en, og prøv igjen innen 10 minutter."
 }
