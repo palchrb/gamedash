@@ -223,5 +223,17 @@
   "claim.locked": "Too many attempts. Try again in a little while.",
   "claim.working": "Connecting…",
   "claim.none_title": "No active code",
-  "claim.none_body": "There is no share code active right now. Ask whoever runs the server to create one, then try again within 10 minutes."
+  "claim.none_body": "There is no share code active right now. Ask whoever runs the server to create one, then try again within 10 minutes.",
+  "share.title": "Share access",
+  "share.button": "Share access",
+  "share.devices_title": "Devices & links",
+  "share.code_hint": "On the new device: open /c on this site and type the code, or scan the QR.",
+  "share.link_hint": "Full link (shown once — copy it now):",
+  "share.new_code": "New code",
+  "share.expires_in": "Expires in {time}",
+  "share.expired": "Code expired — mint a new one.",
+  "share.device_default": "Original link",
+  "share.remove": "Remove",
+  "share.remove_confirm": "Remove this device link? Anyone using it loses access immediately.",
+  "share.removed": "Device link removed"
 }

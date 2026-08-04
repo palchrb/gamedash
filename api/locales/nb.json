@@ -223,5 +223,17 @@
   "claim.locked": "For mange forsøk. Prøv igjen om en liten stund.",
   "claim.working": "Kobler til…",
   "claim.none_title": "Ingen aktiv kode",
-  "claim.none_body": "Det er ingen delingskode aktiv akkurat nå. Be den som styrer serveren lage en, og prøv igjen innen 10 minutter."
+  "claim.none_body": "Det er ingen delingskode aktiv akkurat nå. Be den som styrer serveren lage en, og prøv igjen innen 10 minutter.",
+  "share.title": "Del tilgang",
+  "share.button": "Del tilgang",
+  "share.devices_title": "Enheter og lenker",
+  "share.code_hint": "På den nye enheten: åpne /c på dette nettstedet og skriv inn koden, eller skann QR-koden.",
+  "share.link_hint": "Full lenke (vises én gang — kopier den nå):",
+  "share.new_code": "Ny kode",
+  "share.expires_in": "Utløper om {time}",
+  "share.expired": "Koden er utløpt — lag en ny.",
+  "share.device_default": "Opprinnelig lenke",
+  "share.remove": "Fjern",
+  "share.remove_confirm": "Fjerne denne enhetslenken? Alle som bruker den mister tilgang umiddelbart.",
+  "share.removed": "Enhetslenke fjernet"
 }

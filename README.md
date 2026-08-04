@@ -45,6 +45,23 @@ Then:
    Tapping the big button auto-knocks the household IP into the firewall
    and starts the 24-hour timer.
 
+### Sharing access with a short code
+
+Long knock links are painful to move to a new device (nobody types a
+64-character token on a PC). Instead, open the player's **Manage**
+dialog and hit **Share access**: you get an 8-character code like
+`ABCD-EFGH` (valid 10 minutes, single use) plus a QR of the claim link.
+On the new device the player opens `/c` on this site, types the code,
+confirms their name, and lands on their personal PWA — the claim mints
+a **new** device token, so existing devices keep working. Individual
+device links can be revoked later from the same dialog; **New link**
+still nukes everything at once.
+
+The `/c` page answers 404 whenever no code is outstanding, per-IP rate
+limits apply, and a global circuit breaker darkens the page after ~50
+failed guesses in 10 minutes — so leaving it publicly exposed costs
+nothing between uses.
+
 > **Do not expose port 3000 to the public internet without a reverse
 > proxy**. The admin UI is passkey-gated, but TLS termination and
 > rate-limiting are expected to come from an upstream proxy.
@@ -467,6 +484,14 @@ dash.example.com {
 
     @knock path /u/*
     handle @knock {
+        reverse_proxy localhost:3000
+    }
+
+    # Share-code claim page (/c). Answers 404 unless an admin has an
+    # outstanding code, so exposing it costs nothing between uses.
+    # The claim page also loads its stylesheet from /my/u.css.
+    @claim path /c /c/* /my/u.css /my/icon.svg
+    handle @claim {
         reverse_proxy localhost:3000
     }
 

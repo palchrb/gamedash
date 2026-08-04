@@ -778,8 +778,9 @@ async function addUser() {
     input.value = "";
     const url = `${window.location.origin}/u/${data.token}`;
     try { await navigator.clipboard.writeText(url); } catch { /* ignore */ }
-    prompt(t("users.copy_link_done"), url);
     loadDirectory();
+    // Share modal shows the one-time full link + a typeable short code + QR.
+    openShareModal(data.user.id, data.user.name, url);
   } else if (data) {
     toast(data.error || "Failed", "error");
   }
@@ -902,6 +903,8 @@ function openManageModal(userId) {
       <input type="checkbox" value="${escapeAttr(s.id)}" ${checked}> ${escapeHtml(s.name)}
     </label>`;
   }).join(" ");
+
+  renderManageTokens(entry);
 
   // Suspend / reinstate button
   const suspBtn = document.getElementById("manage-suspend-btn");
@@ -1435,6 +1438,120 @@ async function deleteAdmin(id, name) {
     toast(`Admin "${name}" removed`, "success");
     loadAdmins();
     loadDirectory();
+  } else if (data) {
+    toast(data.error || "Failed", "error");
+  }
+}
+
+// ---- Share access (short codes + QR) ------------------------------------
+let SHARE_USER_ID = null;
+let SHARE_TIMER = null;
+
+function renderShareQr(text) {
+  const el = document.getElementById("share-qr");
+  el.innerHTML = "";
+  try {
+    const qr = qrcode(0, "M");
+    qr.addData(text);
+    qr.make();
+    el.innerHTML = qr.createSvgTag({ cellSize: 4, margin: 2 });
+    const svg = el.querySelector("svg");
+    if (svg) { svg.style.background = "white"; svg.style.borderRadius = "8px"; }
+  } catch { /* QR is progressive enhancement */ }
+}
+
+async function openShareModal(userId, name, fullUrl) {
+  SHARE_USER_ID = userId;
+  document.getElementById("share-modal-name").textContent = name;
+  const linkRow = document.getElementById("share-link-row");
+  const linkInput = document.getElementById("share-link");
+  if (fullUrl) {
+    linkInput.value = fullUrl;
+    linkRow.classList.remove("hidden");
+  } else {
+    linkInput.value = "";
+    linkRow.classList.add("hidden");
+  }
+  document.getElementById("share-modal").classList.remove("hidden");
+  await shareNewCode();
+}
+
+async function shareNewCode() {
+  if (!SHARE_USER_ID) return;
+  const data = await api(`/admin/api/users/${SHARE_USER_ID}/share-code`, { method: "POST" });
+  if (!data || !data.success) {
+    toast((data && data.error) || "Failed", "error");
+    return;
+  }
+  document.getElementById("share-code-box").textContent = data.code;
+  renderShareQr(`${window.location.origin}/c/${data.code}`);
+  startShareCountdown(data.expiresAt);
+}
+
+function startShareCountdown(expiresAt) {
+  const el = document.getElementById("share-countdown");
+  if (SHARE_TIMER) clearInterval(SHARE_TIMER);
+  const tick = () => {
+    const left = Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000));
+    const m = Math.floor(left / 60);
+    const s = String(left % 60).padStart(2, "0");
+    if (left <= 0) {
+      clearInterval(SHARE_TIMER);
+      SHARE_TIMER = null;
+      el.textContent = t("share.expired");
+    } else {
+      el.textContent = t("share.expires_in", { time: `${m}:${s}` });
+    }
+  };
+  tick();
+  SHARE_TIMER = setInterval(tick, 1000);
+}
+
+function closeShareModal() {
+  if (SHARE_TIMER) { clearInterval(SHARE_TIMER); SHARE_TIMER = null; }
+  SHARE_USER_ID = null;
+  document.getElementById("share-modal").classList.add("hidden");
+  // The device list may have grown if the code was claimed while open.
+  loadDirectory();
+}
+
+function manageShareAccess() {
+  if (!MANAGE_USER_ID) return;
+  openShareModal(MANAGE_USER_ID, MANAGE_USER_NAME, null);
+}
+
+function renderManageTokens(entry) {
+  const list = document.getElementById("manage-tokens-list");
+  const tokens = entry.tokens || [];
+  list.innerHTML = tokens.length
+    ? tokens
+        .map((tok) => {
+          const created = new Date(tok.createdAt).toLocaleDateString();
+          const label = tok.label || t("share.device_default");
+          const removeBtn = tokens.length > 1
+            ? `<button class="btn btn-sm btn-red" onclick="manageRevokeToken('${escapeAttr(tok.hash)}')">${t("share.remove")}</button>`
+            : "";
+          return `<li class="firewall-item">
+            <span><strong>${escapeHtml(label)}</strong> <span class="muted">${created}</span></span>
+            <span>${removeBtn}</span>
+          </li>`;
+        })
+        .join("")
+    : '<li class="muted">—</li>';
+}
+
+async function manageRevokeToken(hash) {
+  if (!MANAGE_USER_ID) return;
+  if (!confirm(t("share.remove_confirm"))) return;
+  const data = await api(
+    `/admin/api/users/${MANAGE_USER_ID}/tokens/${encodeURIComponent(hash)}`,
+    { method: "DELETE" },
+  );
+  if (data && data.success) {
+    toast(t("share.removed"), "success");
+    await loadDirectory();
+    const entry = DIRECTORY_ENTRIES.find((e) => e.id === MANAGE_USER_ID && e.kind === "knock");
+    if (entry) renderManageTokens(entry);
   } else if (data) {
     toast(data.error || "Failed", "error");
   }
