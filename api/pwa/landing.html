@@ -136,6 +136,7 @@
       <button class="passkey-btn" id="login-btn" onclick="doLogin()"></button>
       <div class="landing-error" id="login-error"></div>
     </div>
+    <a id="claim-link" href="/c" style="display:none;margin-top:18px;color:var(--accent);font-size:14px"></a>
   </div>
   <div class="landing-pixel-art"></div>
   <script src="/my/webauthn.js"></script>
@@ -155,6 +156,14 @@
       card.style.display = "";
       document.getElementById("login-title").textContent = t("landing.login_title");
       document.getElementById("login-btn").textContent = t("knock.auth_login");
+    }
+
+    // Only shown while an admin-minted share code is outstanding — the
+    // /c surface answers 404 the rest of the time anyway.
+    if (I.claimAvailable) {
+      const link = document.getElementById("claim-link");
+      link.style.display = "";
+      link.textContent = t("landing.have_code");
     }
 
     async function doLogin() {

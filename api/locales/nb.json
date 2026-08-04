@@ -235,5 +235,6 @@
   "share.device_default": "Opprinnelig lenke",
   "share.remove": "Fjern",
   "share.remove_confirm": "Fjerne denne enhetslenken? Alle som bruker den mister tilgang umiddelbart.",
-  "share.removed": "Enhetslenke fjernet"
+  "share.removed": "Enhetslenke fjernet",
+  "landing.have_code": "Har du en tilgangskode?"
 }

@@ -235,5 +235,6 @@
   "share.device_default": "Original link",
   "share.remove": "Remove",
   "share.remove_confirm": "Remove this device link? Anyone using it loses access immediately.",
-  "share.removed": "Device link removed"
+  "share.removed": "Device link removed",
+  "landing.have_code": "Have an access code?"
 }
