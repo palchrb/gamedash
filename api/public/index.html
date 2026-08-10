@@ -312,6 +312,15 @@
 
         <hr class="modal-divider">
 
+        <!-- Devices / links -->
+        <h4 data-i18n="share.devices_title">Devices &amp; links</h4>
+        <ul id="manage-tokens-list" class="firewall-list"></ul>
+        <div class="btn-group" style="margin-top:8px">
+          <button class="btn btn-green btn-sm" onclick="manageShareAccess()" data-i18n="share.button">Share access</button>
+        </div>
+
+        <hr class="modal-divider">
+
         <!-- Actions -->
         <div class="manage-actions">
           <button class="btn btn-sm" onclick="manageNewLink()" data-i18n="btn.new_link">New link</button>
@@ -326,6 +335,30 @@
       </div>
     </div>
   </div>
+
+    <!-- Share access modal — short code + QR (+ full link when known). -->
+    <div id="share-modal" class="modal hidden" role="dialog" aria-modal="true">
+      <div class="modal-box" style="text-align:center">
+        <h3 data-i18n="share.title">Share access</h3>
+        <p class="card-desc" id="share-modal-name"></p>
+
+        <div id="share-code-box" style="font-family:ui-monospace,Menlo,monospace;font-size:2rem;letter-spacing:3px;margin:10px 0 2px"></div>
+        <div class="muted" id="share-countdown" style="margin-bottom:10px"></div>
+        <p class="card-desc" data-i18n="share.code_hint">On the new device, open /c on this site and enter the code.</p>
+
+        <div id="share-qr" style="display:flex;justify-content:center;margin:12px 0"></div>
+
+        <div id="share-link-row" class="hidden" style="margin-top:8px">
+          <p class="card-desc" data-i18n="share.link_hint">Full link (shown once — copy it now):</p>
+          <input id="share-link" readonly style="width:100%;font-size:12px" onclick="this.select()">
+        </div>
+
+        <div class="btn-group" style="justify-content:center;margin-top:14px">
+          <button class="btn btn-sm" onclick="shareNewCode()" data-i18n="share.new_code">New code</button>
+          <button class="btn" onclick="closeShareModal()" data-i18n="common.cancel">Close</button>
+        </div>
+      </div>
+    </div>
 
     <!-- Admin passkey management modal -->
     <div id="admin-passkey-modal" class="modal hidden" role="dialog" aria-modal="true">
@@ -342,6 +375,7 @@
       </div>
     </div>
 
+  <script src="vendor-qrcode.js"></script>
   <script src="webauthn.js"></script>
   <script src="app.js"></script>
 </body>

@@ -12,7 +12,8 @@ function fakeUser(overrides: Partial<UserRecord> = {}): UserRecord {
   return {
     id: "u1",
     name: "Test",
-    tokenHash: "hash",
+    tokens: [{ hash: "hash", createdAt: new Date().toISOString(), label: null }],
+    claimCode: null,
     allowedServices: [],
     locale: null,
     createdAt: new Date().toISOString(),

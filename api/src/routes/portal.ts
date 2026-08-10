@@ -36,7 +36,7 @@ import { HttpError } from "../middleware/error-handler";
 import { clientIp, isInIgnoredRange, isValidPublicIP } from "../lib/ip";
 import { getDictForClient, resolveLang } from "../lib/i18n";
 import { knockUser, revokeUser } from "../knock/smart-revoke";
-import { findById, listUsers } from "../repos/users";
+import { anyClaimCodeOutstanding, findById, listUsers } from "../repos/users";
 import { findRuleByUserId, loadRules } from "../repos/firewall-rules";
 import { summarizeUser } from "../repos/stats";
 import { listAllConnections } from "../firewall/connections";
@@ -169,6 +169,7 @@ export function portalRouter(): Router {
       const hostname = new URL(c.ADMIN_ORIGIN).hostname;
       const initial = {
         requirePasskey: c.KNOCK_REQUIRE_PASSKEY,
+        claimAvailable: await anyClaimCodeOutstanding(),
       };
       res
         .type("html")

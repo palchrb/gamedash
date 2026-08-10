@@ -25,6 +25,7 @@ import { config } from "./config";
 import { logger } from "./logger";
 import { errorHandler } from "./middleware/error-handler";
 import { adminAuthRouter } from "./routes/admin-auth";
+import { claimRouter } from "./routes/claim";
 import { directoryRouter } from "./routes/directory";
 import { firewallRouter } from "./routes/firewall";
 import { i18nRouter } from "./routes/i18n";
@@ -119,6 +120,10 @@ export function createApp(): Express {
   // Per-user knock PWA. Auth is carried in the URL token, not the cookie,
   // so these routes MUST be mounted before the cookie gate below.
   app.use(knockPwaRouter());
+
+  // Share-code claim surface (/c). Public, but answers 404 unless a
+  // code is outstanding — see routes/claim.ts for the hardening story.
+  app.use(claimRouter());
 
   // ── Kids portal ────────────────────────────────────────────────────
   // Root URL (/) serves the kids portal when KNOCK_REQUIRE_PASSKEY=true,

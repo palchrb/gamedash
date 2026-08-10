@@ -135,18 +135,72 @@ export const UserHistoryEntrySchema = z.preprocess(
 );
 export type UserHistoryEntry = z.infer<typeof UserHistoryEntrySchema>;
 
-export const UserRecordSchema = z.object({
-  id: z.string(),
-  name: z.string(),
-  tokenHash: z.string(), // sha-256 hex of the url token, never stored in clear
-  allowedServices: z.array(z.string()),
-  locale: z.string().nullable(),
+/**
+ * One knock token for a user. Users hold a list of these so each device
+ * (or each share-code claim) can carry its own token — revoking one
+ * device doesn't kill the others. Only SHA-256 hashes are stored.
+ */
+export const UserTokenSchema = z.object({
+  hash: z.string(),
   createdAt: IsoTimestampSchema,
-  history: z.array(UserHistoryEntrySchema),
-  credentials: z.array(WebAuthnCredentialSchema).default([]),
-  registrationOpenUntil: IsoTimestampSchema.nullable().default(null),
-  suspended: z.boolean().default(false),
+  label: z.string().nullable().optional(),
 });
+export type UserToken = z.infer<typeof UserTokenSchema>;
+
+/**
+ * A pending share-code (admin-minted, short TTL, single-use). Claiming
+ * it generates a fresh token for the user. Only the code hash is stored.
+ */
+export const UserClaimCodeSchema = z.object({
+  codeHash: z.string(),
+  expiresAt: IsoTimestampSchema,
+});
+export type UserClaimCode = z.infer<typeof UserClaimCodeSchema>;
+
+/**
+ * Older user records stored a scalar `tokenHash`. The z.preprocess step
+ * migrates them to `tokens: [{hash, createdAt}]` transparently on load —
+ * same pattern as the `ip`→`ips` migration on firewall rules.
+ */
+export const UserRecordSchema = z.preprocess(
+  (obj) => {
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const rec = obj as Record<string, unknown>;
+      if (!("tokens" in rec) && "tokenHash" in rec) {
+        const { tokenHash, ...rest } = rec;
+        return {
+          ...rest,
+          tokens:
+            typeof tokenHash === "string"
+              ? [
+                  {
+                    hash: tokenHash,
+                    createdAt:
+                      typeof rec["createdAt"] === "string"
+                        ? rec["createdAt"]
+                        : new Date(0).toISOString(),
+                  },
+                ]
+              : [],
+        };
+      }
+    }
+    return obj;
+  },
+  z.object({
+    id: z.string(),
+    name: z.string(),
+    tokens: z.array(UserTokenSchema),
+    claimCode: UserClaimCodeSchema.nullable().default(null),
+    allowedServices: z.array(z.string()),
+    locale: z.string().nullable(),
+    createdAt: IsoTimestampSchema,
+    history: z.array(UserHistoryEntrySchema),
+    credentials: z.array(WebAuthnCredentialSchema).default([]),
+    registrationOpenUntil: IsoTimestampSchema.nullable().default(null),
+    suspended: z.boolean().default(false),
+  }),
+);
 export type UserRecord = z.infer<typeof UserRecordSchema>;
 
 export const UsersFileSchema = z.object({

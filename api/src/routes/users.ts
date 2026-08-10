@@ -16,9 +16,11 @@ import {
   deleteUser,
   findById,
   listUsers,
+  mintClaimCode,
   openRegistrationWindow,
   reinstateUser,
   removeKnockCredential,
+  revokeUserToken,
   rotateToken,
   suspendUser,
   toPublic,
@@ -121,6 +123,49 @@ export function usersRouter(): Router {
       if (!id) throw new HttpError(400, "missing id");
       const r = await revokeUser(id, (nodeId: string) => registry().resolveNode(nodeId));
       res.json({ success: true, ...r });
+    }),
+  );
+
+  // Mint a share code for a player (short TTL, single-use). The claim
+  // flow at /c exchanges it for a fresh device token — the existing
+  // links keep working. See routes/claim.ts.
+  router.post(
+    "/api/users/:id/share-code",
+    asyncH(async (req, res) => {
+      const id = req.params["id"];
+      if (!id) throw new HttpError(400, "missing id");
+      const user = await findById(id);
+      if (!user) throw new HttpError(404, "user not found");
+      if (user.suspended) throw new HttpError(400, "user is suspended");
+      const { code, expiresAt } = await mintClaimCode(id);
+      await audit({ kind: "knock.code_minted", userId: id, name: user.name, mintedBy: req.adminId ?? null });
+      res.json({
+        success: true,
+        code: `${code.slice(0, 4)}-${code.slice(4)}`,
+        expiresAt,
+      });
+    }),
+  );
+
+  // Revoke a single device token (by hash). The last token cannot be
+  // removed — use rotate-token for the full reset.
+  router.delete(
+    "/api/users/:id/tokens/:hash",
+    asyncH(async (req, res) => {
+      const id = req.params["id"];
+      const hash = req.params["hash"];
+      if (!id || !hash) throw new HttpError(400, "missing id or hash");
+      const user = await findById(id);
+      if (!user) throw new HttpError(404, "user not found");
+      let removed: boolean;
+      try {
+        removed = await revokeUserToken(id, hash);
+      } catch (err) {
+        throw new HttpError(400, (err as Error).message);
+      }
+      if (!removed) throw new HttpError(404, "token not found");
+      await audit({ kind: "user.token_revoked", userId: id, tokenHash: hash });
+      res.json({ success: true });
     }),
   );
 

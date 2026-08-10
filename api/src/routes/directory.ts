@@ -34,6 +34,8 @@ interface DirectoryEntry {
   registrationOpenUntil?: string | null;
   allowedServices?: string[];
   suspended?: boolean;
+  // Device tokens (knock users): hash is a revocation handle only.
+  tokens?: Array<{ hash: string; createdAt: string; label: string | null }>;
 }
 
 function projectCredential(c: WebAuthnCredential): DirectoryCredential {
@@ -99,6 +101,11 @@ export function directoryRouter(): Router {
           registrationOpenUntil: u.registrationOpenUntil,
           allowedServices: u.allowedServices,
           suspended: u.suspended ?? false,
+          tokens: u.tokens.map((tok) => ({
+            hash: tok.hash,
+            createdAt: tok.createdAt,
+            label: tok.label ?? null,
+          })),
         });
       }
 

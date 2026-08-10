@@ -9,7 +9,12 @@
  */
 
 import { config } from "../config";
-import { sha256Hex, generateToken, constantTimeEqualHex } from "../lib/hash";
+import {
+  sha256Hex,
+  generateToken,
+  generateShareCode,
+  constantTimeEqualHex,
+} from "../lib/hash";
 import { readJson, withLock, writeJson } from "../lib/atomic-file";
 import {
   type UserRecord,
@@ -58,7 +63,11 @@ export async function listUsers(): Promise<UserRecord[]> {
   return data.users;
 }
 
-/** Publicly safe user projection — never includes the token hash. */
+/**
+ * Publicly safe user projection — never includes plaintext tokens.
+ * Token entries expose only their sha-256 hash (used as a revocation
+ * handle by the admin UI; the hash cannot be turned back into a link).
+ */
 export interface PublicUser {
   id: string;
   name: string;
@@ -73,6 +82,11 @@ export interface PublicUser {
     deviceLabel: string | null;
     createdAt: string;
     lastUsedAt: string | null;
+  }>;
+  tokens: Array<{
+    hash: string;
+    createdAt: string;
+    label: string | null;
   }>;
 }
 
@@ -91,6 +105,11 @@ export function toPublic(u: UserRecord): PublicUser {
       deviceLabel: c.deviceLabel ?? null,
       createdAt: c.createdAt,
       lastUsedAt: c.lastUsedAt,
+    })),
+    tokens: u.tokens.map((t) => ({
+      hash: t.hash,
+      createdAt: t.createdAt,
+      label: t.label ?? null,
     })),
   };
 }
@@ -116,7 +135,9 @@ export async function findByToken(token: string): Promise<UserRecord | null> {
   const candidateHash = sha256Hex(token);
   const data = await loadUsers();
   for (const u of data.users) {
-    if (constantTimeEqualHex(u.tokenHash, candidateHash)) return u;
+    for (const t of u.tokens) {
+      if (constantTimeEqualHex(t.hash, candidateHash)) return u;
+    }
   }
   return null;
 }
@@ -146,7 +167,8 @@ export async function createUser(params: {
     const user: UserRecord = {
       id: newUserId(params.name),
       name: params.name,
-      tokenHash: sha256Hex(plainToken),
+      tokens: [{ hash: sha256Hex(plainToken), createdAt: now, label: null }],
+      claimCode: null,
       allowedServices: params.allowedServices,
       locale: params.locale,
       createdAt: now,
@@ -183,14 +205,124 @@ export async function deleteUser(id: string): Promise<UserRecord | null> {
   });
 }
 
+/**
+ * Rotate: kill EVERY token (all devices) and any outstanding claim code,
+ * replace with a single fresh token. This is the "assume the link leaked"
+ * panic button — the semantics predate multi-token support on purpose.
+ */
 export async function rotateToken(id: string): Promise<string> {
   const plainToken = generateToken(32);
   await mutateUsers((draft) => {
     const user = draft.users.find((u) => u.id === id);
     if (!user) throw new Error("User not found");
-    user.tokenHash = sha256Hex(plainToken);
+    user.tokens = [
+      { hash: sha256Hex(plainToken), createdAt: new Date().toISOString(), label: null },
+    ];
+    user.claimCode = null;
   });
   return plainToken;
+}
+
+// ── Share codes (admin-minted, single-use, short TTL) ─────────────────
+
+export const CLAIM_CODE_TTL_MS = 10 * 60 * 1000;
+const MAX_TOKENS_PER_USER = 10;
+
+/**
+ * Mint a share code for a user. Overwrites any previous outstanding code
+ * (one live code per user). Returns the plaintext code exactly once.
+ * Refuses suspended users — they must not gain new entry points.
+ */
+export async function mintClaimCode(
+  userId: string,
+): Promise<{ code: string; expiresAt: string }> {
+  const code = generateShareCode();
+  const expiresAt = new Date(Date.now() + CLAIM_CODE_TTL_MS).toISOString();
+  await mutateUsers((draft) => {
+    const user = draft.users.find((u) => u.id === userId);
+    if (!user) throw new Error("User not found");
+    if (user.suspended) throw new Error("User is suspended");
+    user.claimCode = { codeHash: sha256Hex(code), expiresAt };
+  });
+  return { code, expiresAt };
+}
+
+/** True if any user currently has an unexpired claim code outstanding. */
+export async function anyClaimCodeOutstanding(): Promise<boolean> {
+  const data = await loadUsers();
+  const now = Date.now();
+  return data.users.some(
+    (u) => u.claimCode && new Date(u.claimCode.expiresAt).getTime() > now,
+  );
+}
+
+/**
+ * Redeem a share code: consume it atomically and mint a fresh token for
+ * the matching user. Returns null when the code matches nothing (wrong,
+ * expired, or already used) — the caller treats all three identically so
+ * responses don't leak which case occurred.
+ */
+export async function claimShareCode(
+  normalizedCode: string,
+): Promise<{ user: UserRecord; plainToken: string } | null> {
+  const codeHash = sha256Hex(normalizedCode);
+  const plainToken = generateToken(32);
+  const now = Date.now();
+  return mutateUsers((draft) => {
+    for (const user of draft.users) {
+      if (!user.claimCode) continue;
+      if (!constantTimeEqualHex(user.claimCode.codeHash, codeHash)) continue;
+      const expired = new Date(user.claimCode.expiresAt).getTime() <= now;
+      // Consume on any match, valid or expired — a matched-but-expired
+      // code must not stay guessable forever.
+      user.claimCode = null;
+      if (expired || user.suspended) return null;
+      user.tokens.push({
+        hash: sha256Hex(plainToken),
+        createdAt: new Date().toISOString(),
+        label: "via share code",
+      });
+      // Bound the token list so repeated claims can't grow it forever;
+      // drop the oldest non-original tokens first.
+      while (user.tokens.length > MAX_TOKENS_PER_USER) {
+        user.tokens.splice(1, 1);
+      }
+      return { user, plainToken };
+    }
+    return null;
+  });
+}
+
+/** Look up the user (if any) holding a live claim code — for the claim page's name display. */
+export async function findUserByClaimCode(
+  normalizedCode: string,
+): Promise<UserRecord | null> {
+  const codeHash = sha256Hex(normalizedCode);
+  const data = await loadUsers();
+  const now = Date.now();
+  for (const user of data.users) {
+    if (!user.claimCode) continue;
+    if (!constantTimeEqualHex(user.claimCode.codeHash, codeHash)) continue;
+    if (new Date(user.claimCode.expiresAt).getTime() <= now) return null;
+    if (user.suspended) return null;
+    return user;
+  }
+  return null;
+}
+
+/** Revoke a single device token by its hash. Refuses to remove the last one. */
+export async function revokeUserToken(
+  userId: string,
+  tokenHash: string,
+): Promise<boolean> {
+  return mutateUsers((draft) => {
+    const user = draft.users.find((u) => u.id === userId);
+    if (!user) throw new Error("User not found");
+    if (user.tokens.length <= 1) throw new Error("Cannot remove the last token");
+    const before = user.tokens.length;
+    user.tokens = user.tokens.filter((t) => t.hash !== tokenHash);
+    return user.tokens.length < before;
+  });
 }
 
 export async function suspendUser(id: string): Promise<UserRecord> {
