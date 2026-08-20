@@ -48,6 +48,10 @@ const ConfigSchema = z.object({
   // ── Knock (per-user PWA) ───────────────────────────────────────────────
   KNOCK_USER_TTL_HOURS: positiveInt.default("24"),
   KNOCK_IGNORE_RANGES: z.string().default("100.64.0.0/10"),
+  // Admin self-knock rules expire too — just slower than player rules.
+  // Without a TTL, merge-on-overlap accumulates every network an admin
+  // ever visited (shared proxy egress IPs included) forever.
+  ADMIN_KNOCK_TTL_HOURS: positiveInt.default("168"),
 
   // ── i18n ───────────────────────────────────────────────────────────────
   DEFAULT_LOCALE: z.string().default("en"),
