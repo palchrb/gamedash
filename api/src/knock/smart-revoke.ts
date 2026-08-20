@@ -27,7 +27,7 @@ import {
   mutateRules,
 } from "../repos/firewall-rules";
 import { pushHistory } from "../repos/users";
-import { isValidPublicIP } from "../lib/ip";
+import { isInIgnoredRange, isValidPublicIP } from "../lib/ip";
 import type { Registry } from "../services/registry";
 import type { FirewallRule, NodeConfig, UserRecord } from "../schemas";
 
@@ -230,6 +230,16 @@ export async function revokeUser(
 /**
  * Admin self-knock — mirrors knockUser but keyed on adminId so each
  * admin has at most one auto-rule at a time.
+ *
+ * Two rules learned the hard way:
+ *  - Ignored ranges (Tailscale/CGNAT) are filtered here too. Without
+ *    this, an admin browsing over the tailnet knocks their 100.64.x.x
+ *    address into the rule, which then overlaps with EVERY later knock
+ *    (the tailnet IP never changes) — so merges accumulate every
+ *    network the admin ever visited, forever.
+ *  - Admin rules carry a TTL (ADMIN_KNOCK_TTL_HOURS, default 7 days),
+ *    renewed on each knock/merge. Stale shared-proxy egress IPs age out
+ *    instead of staying whitelisted indefinitely.
  */
 export async function knockAdmin(
   adminId: string,
@@ -238,7 +248,8 @@ export async function knockAdmin(
   registry: Registry,
   options: { force?: boolean; ua?: string | null } = {},
 ): Promise<KnockResult> {
-  const newIps = sanitiseIps(ips);
+  const c = config();
+  const newIps = sanitiseIps(ips).filter((ip) => !isInIgnoredRange(ip, c));
   if (newIps.length === 0) {
     throw new Error("Invalid or non-public IP address");
   }
@@ -247,12 +258,14 @@ export async function knockAdmin(
     throw new Error("No ports configured");
   }
   const resolveNode = makeResolveNode(registry);
+  const ttlMs = c.ADMIN_KNOCK_TTL_HOURS * 3_600_000;
 
   return mutateRules(async (draft) => {
     const existingIdx = draft.rules.findIndex((r) => r.adminId === adminId);
     const existing = existingIdx >= 0 ? draft.rules[existingIdx] ?? null : null;
+    const expiresAt = new Date(Date.now() + ttlMs).toISOString();
 
-    // ── Overlap (same network) → merge ──
+    // ── Overlap (same network) → merge + bump expiry ──
     if (existing) {
       const existingSet = new Set(existing.ips);
       const overlap = newIps.some((ip) => existingSet.has(ip));
@@ -266,12 +279,13 @@ export async function knockAdmin(
         draft.rules[existingIdx] = {
           ...existing,
           ips: mergedIps,
+          expiresAt,
           services: registry.buildRuleServices(),
         };
         return {
           status: "ok" as const,
           rule: draft.rules[existingIdx]!,
-          expiresAt: existing.expiresAt ?? "",
+          expiresAt,
           errors,
         };
       }
@@ -318,13 +332,14 @@ export async function knockAdmin(
     const rule: FirewallRule = {
       ips: newIps,
       addedAt: new Date().toISOString(),
+      expiresAt,
       label: `Admin: ${adminName}`,
       adminId,
       services: registry.buildRuleServices(),
     };
     draft.rules.push(rule);
     await audit({ kind: "admin.knock", adminId, ips: newIps });
-    return { status: "ok" as const, rule, expiresAt: "", errors };
+    return { status: "ok" as const, rule, expiresAt, errors };
   });
 }
 

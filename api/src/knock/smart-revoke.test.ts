@@ -28,7 +28,7 @@ vi.mock("../firewall/connections", () => ({
 }));
 
 import { isAnyIpActiveForRule } from "../firewall/connections";
-import { knockUser, revokeUser } from "./smart-revoke";
+import { knockAdmin, knockUser, revokeUser } from "./smart-revoke";
 import { loadRules } from "../repos/firewall-rules";
 import type { UserRecord } from "../schemas";
 import type { Registry } from "../services/registry";
@@ -197,6 +197,51 @@ describe("knockUser", () => {
 
     const rules = await loadRules();
     expect(rules.rules).toHaveLength(1);
+  });
+});
+
+describe("knockAdmin", () => {
+  it("filters ignored ranges (Tailscale/CGNAT) so they never anchor merges", async () => {
+    const result = await knockAdmin(
+      "a1",
+      "Admin",
+      ["100.64.0.4", "203.0.113.1"],
+      fakeRegistry,
+    );
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") throw new Error("unexpected");
+    expect(result.rule.ips).toEqual(["203.0.113.1"]);
+  });
+
+  it("rejects a knock consisting only of ignored-range IPs", async () => {
+    await expect(
+      knockAdmin("a1", "Admin", ["100.64.0.4"], fakeRegistry),
+    ).rejects.toThrow(/Invalid/u);
+  });
+
+  it("sets an expiry on new rules and bumps it on merge", async () => {
+    const first = await knockAdmin("a1", "Admin", ["203.0.113.1"], fakeRegistry);
+    expect(first.status).toBe("ok");
+    if (first.status !== "ok") throw new Error("unexpected");
+    expect(first.rule.expiresAt).toBeTruthy();
+    const firstExpiry = first.rule.expiresAt!;
+
+    await new Promise((r) => setTimeout(r, 5));
+    // Overlapping knock (same v4, new v6) → merge and renewed expiry
+    const second = await knockAdmin(
+      "a1",
+      "Admin",
+      ["203.0.113.1", "2001:db8::1"],
+      fakeRegistry,
+    );
+    expect(second.status).toBe("ok");
+    if (second.status !== "ok") throw new Error("unexpected");
+    expect(second.rule.ips).toEqual(["203.0.113.1", "2001:db8::1"]);
+    expect(second.rule.expiresAt! >= firstExpiry).toBe(true);
+
+    const rules = await loadRules();
+    expect(rules.rules).toHaveLength(1);
+    expect(rules.rules[0]!.expiresAt).toBeTruthy();
   });
 });
 
