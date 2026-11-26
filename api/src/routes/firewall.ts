@@ -23,6 +23,7 @@ import { listAllConnections } from "../firewall/connections";
 import { listUsers } from "../repos/users";
 import { findAdminById, loadAdminCredentials } from "../repos/admin";
 import { registry } from "../services/registry";
+import { collectLivePlayerInfo } from "../services/live-players";
 import { knockAdmin, revokeAdmin } from "../knock/smart-revoke";
 import { z } from "zod";
 
@@ -177,19 +178,7 @@ export function firewallRouter(): Router {
         liveByIp.set(c.srcIp, set);
       }
 
-      const playersByService: Record<string, string[]> = {};
-      for (const svc of registry().services.values()) {
-        if (svc.hasCapability("players")) {
-          try {
-            const st = await svc.status();
-            if (st.players.length > 0) {
-              playersByService[svc.id] = st.players;
-            }
-          } catch {
-            // ignore — player fetch is best-effort
-          }
-        }
-      }
+      const { playersByService, gamesByService } = await collectLivePlayerInfo();
 
       const sessions: Array<{
         userId: string;
@@ -279,7 +268,7 @@ export function firewallRouter(): Router {
         });
       }
 
-      res.json({ success: true, sessions });
+      res.json({ success: true, sessions, games: gamesByService });
     }),
   );
 

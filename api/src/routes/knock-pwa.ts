@@ -35,6 +35,7 @@ import { findRuleByUserId, loadRules } from "../repos/firewall-rules";
 import { summarizeUser } from "../repos/stats";
 import { listAllConnections } from "../firewall/connections";
 import { registry } from "../services/registry";
+import { collectLivePlayerInfo } from "../services/live-players";
 import { config } from "../config";
 import {
   generateKnockAuthenticationOpts,
@@ -55,6 +56,7 @@ import type { UserRecord } from "../schemas";
 
 const PWA_DIR = path.resolve(__dirname, "..", "..", "pwa");
 const WEBAUTHN_JS = path.resolve(__dirname, "..", "..", "public", "webauthn.js");
+const PLAY_SHARED_JS = path.resolve(__dirname, "..", "..", "public", "play-shared.js");
 
 const knockLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -388,27 +390,7 @@ export function knockPwaRouter(): Router {
         liveByIp.set(c.srcIp, set);
       }
 
-      const playersByService: Record<string, string[]> = {};
-      const gamesByService: Record<string, unknown[]> = {};
-      for (const svc of registry().services.values()) {
-        if (svc.hasCapability("players")) {
-          try {
-            const st = await svc.status();
-            if (st.players.length > 0) {
-              playersByService[svc.id] = st.players;
-            }
-            // Adapters that expose per-game detail (currently only
-            // Impostor) surface it in details.games so the PWA can
-            // render a lobby browser with codes, hosts, maps etc.
-            const maybeGames = (st.details as { games?: unknown[] } | undefined)?.games;
-            if (Array.isArray(maybeGames) && maybeGames.length > 0) {
-              gamesByService[svc.id] = maybeGames;
-            }
-          } catch {
-            // ignore — player fetch is best-effort
-          }
-        }
-      }
+      const { playersByService, gamesByService } = await collectLivePlayerInfo();
 
       const sessions = users.map((u) => {
         const rule = fw.rules.find((r) => r.userId === u.id);
@@ -580,6 +562,9 @@ export function knockPwaRouter(): Router {
   });
   router.get("/u/:token/u.css", (_req, res) => {
     res.type("text/css").sendFile(path.join(PWA_DIR, "u.css"));
+  });
+  router.get("/u/:token/play-shared.js", (_req, res) => {
+    res.type("application/javascript").sendFile(PLAY_SHARED_JS);
   });
   router.get("/u/:token/webauthn.js", (_req, res) => {
     res.type("application/javascript").sendFile(WEBAUTHN_JS);
