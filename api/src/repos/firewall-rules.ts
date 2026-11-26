@@ -11,6 +11,7 @@ import {
   type FirewallRulesFile,
   FirewallRulesFileSchema,
   type PortSpec,
+  type RuleService,
 } from "../schemas";
 
 function filePath(): string {
@@ -99,9 +100,14 @@ export function flattenPorts(rule: FirewallRule): PortSpec[] {
 }
 
 /** Flatten a rule's services into per-node deduplicated port lists. */
-export function flattenPortsByNode(rule: FirewallRule): Map<string, PortSpec[]> {
+export function flattenPortsByNode(rule: Pick<FirewallRule, "services">): Map<string, PortSpec[]> {
+  return portsByNodeFromServices(rule.services);
+}
+
+/** Group the ports of a services snapshot by node (deduped per node). */
+export function portsByNodeFromServices(services: readonly RuleService[]): Map<string, PortSpec[]> {
   const byNode = new Map<string, PortSpec[]>();
-  for (const svc of rule.services) {
+  for (const svc of services) {
     const nodeId = svc.node ?? "local";
     let list = byNode.get(nodeId);
     if (!list) {
@@ -118,4 +124,38 @@ export function flattenPortsByNode(rule: FirewallRule): Map<string, PortSpec[]> 
     }
   }
   return byNode;
+}
+
+/**
+ * Union two services snapshots: every service id from either side, and
+ * for a service present in both, the union of its ports (keyed per node).
+ *
+ * Used when a knock merges into an existing rule. The snapshot is what
+ * revoke/expiry later deletes, so it must cover EVERYTHING that was ever
+ * allowed for this rule — replacing it with only the newest request
+ * orphans the older allows in UFW forever.
+ */
+export function mergeRuleServices(
+  a: readonly RuleService[],
+  b: readonly RuleService[],
+): RuleService[] {
+  const out = new Map<string, RuleService>();
+  for (const svc of [...a, ...b]) {
+    const node = svc.node ?? "local";
+    const key = `${node}|${svc.id}`;
+    const prev = out.get(key);
+    if (!prev) {
+      out.set(key, { id: svc.id, node, ports: svc.ports.map((p) => ({ ...p })) });
+      continue;
+    }
+    const seen = new Set(prev.ports.map((p) => `${p.port}/${p.proto}`));
+    for (const p of svc.ports) {
+      const k = `${p.port}/${p.proto}`;
+      if (!seen.has(k)) {
+        seen.add(k);
+        prev.ports.push({ ...p });
+      }
+    }
+  }
+  return [...out.values()];
 }

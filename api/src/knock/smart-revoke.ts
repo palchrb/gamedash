@@ -19,17 +19,20 @@
  */
 
 import { audit } from "../repos/audit";
+import { logger } from "../logger";
 import { config } from "../config";
 import { isAnyIpActiveForRule } from "../firewall/connections";
 import { ufwAllowMany, ufwDeleteMany, type UfwError } from "../firewall/ufw";
 import {
   flattenPortsByNode,
+  mergeRuleServices,
+  portsByNodeFromServices,
   mutateRules,
 } from "../repos/firewall-rules";
 import { pushHistory } from "../repos/users";
 import { isInIgnoredRange, isValidPublicIP } from "../lib/ip";
 import type { Registry } from "../services/registry";
-import type { FirewallRule, NodeConfig, UserRecord } from "../schemas";
+import type { FirewallRule, NodeConfig, RuleService, UserRecord } from "../schemas";
 
 export type KnockResult =
   | {
@@ -77,6 +80,28 @@ function makeResolveNode(registry: Registry): (nodeId: string) => NodeConfig {
   return (nodeId: string) => registry.resolveNode(nodeId);
 }
 
+/**
+ * UFW allows needed when a knock merges into an existing rule:
+ *  - every IP (old and new) on the newly requested ports — an existing IP
+ *    re-knocking for a different service must actually get that service;
+ *  - newly added IPs on the ports the rule already covered.
+ * Existing IPs on already-covered ports are untouched. ufw ignores
+ * duplicate allows, so overlap between the two sets is harmless.
+ */
+async function allowForMerge(
+  existing: FirewallRule,
+  mergedIps: readonly string[],
+  addedIps: readonly string[],
+  newServices: readonly RuleService[],
+  resolveNode: (nodeId: string) => NodeConfig,
+): Promise<UfwError[]> {
+  const errors = await ufwAllowMany(mergedIps, portsByNodeFromServices(newServices), resolveNode);
+  if (addedIps.length > 0) {
+    errors.push(...(await ufwAllowMany(addedIps, flattenPortsByNode(existing), resolveNode)));
+  }
+  return errors;
+}
+
 export async function knockUser(
   user: UserRecord,
   ips: readonly string[],
@@ -117,16 +142,15 @@ export async function knockUser(
       if (overlap) {
         const mergedIps = [...new Set([...existing.ips, ...newIps])];
         const addedIps = mergedIps.filter((ip) => !existingSet.has(ip));
-        let errors: UfwError[] = [];
-        if (addedIps.length > 0) {
-          errors = await ufwAllowMany(addedIps, portsByNode, resolveNode);
-        }
+        const newServices = registry.buildRuleServices(serviceIds);
+        const errors = await allowForMerge(existing, mergedIps, addedIps, newServices, resolveNode);
+        const services = mergeRuleServices(existing.services, newServices);
         draft.rules[existingIdx] = {
           ...existing,
           ips: mergedIps,
           expiresAt,
-          label: `${user.name} via ${serviceIds.join(",")}`,
-          services: registry.buildRuleServices(serviceIds),
+          label: `${user.name} via ${services.map((s) => s.id).join(",")}`,
+          services,
         };
         if (addedIps.length > 0) {
           await pushHistory(user.id, {
@@ -272,15 +296,13 @@ export async function knockAdmin(
       if (overlap) {
         const mergedIps = [...new Set([...existing.ips, ...newIps])];
         const addedIps = mergedIps.filter((ip) => !existingSet.has(ip));
-        let errors: UfwError[] = [];
-        if (addedIps.length > 0) {
-          errors = await ufwAllowMany(addedIps, portsByNode, resolveNode);
-        }
+        const newServices = registry.buildRuleServices();
+        const errors = await allowForMerge(existing, mergedIps, addedIps, newServices, resolveNode);
         draft.rules[existingIdx] = {
           ...existing,
           ips: mergedIps,
           expiresAt,
-          services: registry.buildRuleServices(),
+          services: mergeRuleServices(existing.services, newServices),
         };
         return {
           status: "ok" as const,
@@ -388,6 +410,10 @@ export async function sweepExpiredRules(
       } catch {
         // logged inside ufwDeleteMany
       }
+      logger().info(
+        { userId: rule.userId ?? null, adminId: rule.adminId ?? null, label: rule.label, ips: rule.ips },
+        "firewall rule expired",
+      );
       await audit({
         kind: "knock.auto_expire",
         userId: rule.userId ?? null,
