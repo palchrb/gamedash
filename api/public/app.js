@@ -1291,29 +1291,10 @@ async function refreshPlayState() {
 }
 
 async function refreshPlayActive() {
-  const sessData = await api("/admin/api/active-sessions");
-  const activeList = $("play-active-list");
-  const sessions = (sessData && sessData.sessions) || [];
-  if (sessions.length === 0) {
-    activeList.innerHTML = `<li class="muted">${t("stats.no_data")}</li>`;
-    return;
-  }
-  activeList.innerHTML = sessions.map((s) => {
-    const ips = Array.isArray(s.ips) ? s.ips : [];
-    const playing = s.services.find((sv) => sv.connected);
-    const allowed = ips.length > 0;
-    let dot = "gray", label;
-    if (s.suspended) {
-      dot = "gray"; label = t("directory.suspended");
-    } else if (playing) {
-      dot = "green"; label = t("active.connected", { service: playing.name });
-    } else if (allowed) {
-      dot = "yellow"; label = t("active.idle_allowed");
-    } else {
-      label = t("active.idle_unallowed");
-    }
-    return `<li><span><span class="dot ${dot}"></span>${escapeHtml(s.name)}</span><span class="muted">${escapeHtml(label)}</span></li>`;
-  }).join("");
+  const data = await api("/admin/api/active-sessions");
+  if (!data || !data.success) return;
+  // Same renderer as the player PWA — see public/play-shared.js.
+  window.GamedashPlay.renderActive($("play-active-list"), data, { t, toast });
 }
 
 function initPlayTab() {

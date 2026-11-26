@@ -786,3 +786,25 @@ h3 {
   display: block;
   margin: 16px auto;
 }
+
+/* "Who is playing now" — per-service summary + Among Us lobbies.
+   Mirrors pwa/u.css; markup comes from the shared play-shared.js. */
+#tab-play .pwa .svc-summary { list-style: none; padding: 0; margin: 0 0 4px; }
+#tab-play .pwa .svc-summary-item { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px; padding: 6px 0; }
+#tab-play .pwa .svc-summary-item > span:last-of-type { font-size: 13px; color: var(--accent); font-weight: 600; }
+#tab-play .pwa .svc-summary-names { width: 100%; font-size: 13px; color: var(--muted); padding-left: 15px; }
+#tab-play .pwa .active-divider { border: none; border-top: 1px solid rgba(255,255,255,0.08); margin: 8px 0; }
+#tab-play .pwa .svc-games-group { margin: 8px 0; }
+#tab-play .pwa .svc-games-title { font-size: 14px; color: var(--muted); margin: 6px 0 4px; font-weight: 500; }
+#tab-play .pwa .svc-games-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 4px; }
+#tab-play .pwa .game-item { padding: 6px 8px; background: rgba(255,255,255,0.03); border-radius: 8px; }
+#tab-play .pwa .game-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 14px; }
+#tab-play .pwa .game-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.5px; background: rgba(255,255,255,0.08); padding: 2px 8px; border-radius: 4px; cursor: pointer; user-select: all; }
+#tab-play .pwa .game-code:hover { background: rgba(78, 222, 128, 0.15); }
+#tab-play .pwa .game-map { color: var(--muted); font-size: 13px; }
+#tab-play .pwa .game-players { margin-left: auto; font-size: 13px; color: var(--accent); font-weight: 600; }
+#tab-play .pwa .game-badge { font-size: 11px; padding: 1px 6px; border-radius: 4px; text-transform: uppercase; }
+#tab-play .pwa .game-public { background: rgba(78, 222, 128, 0.15); color: var(--accent); }
+#tab-play .pwa .game-private { background: rgba(155, 155, 155, 0.15); color: var(--muted); }
+#tab-play .pwa .game-state { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+#tab-play .pwa .game-meta { font-size: 12px; margin-top: 2px; }

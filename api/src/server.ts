@@ -19,6 +19,7 @@ import { installRuntimeGauges } from "./routes/ops";
 import { initRegistry, disposeRegistry, registry } from "./services/registry";
 import { statsCollector } from "./stats/collector";
 import { sweepExpiredRules } from "./knock/smart-revoke";
+import { retryPendingDeletes } from "./firewall/ufw";
 import { rotateAuditLogIfNeeded } from "./repos/audit";
 import { sweepExpiredSessions } from "./repos/admin";
 import { sweepExpiredKnockSessions } from "./repos/knock-sessions";
@@ -50,9 +51,16 @@ async function main(): Promise<void> {
   // + WebAuthn challenge sweep + audit log rotation (every 10 minutes).
   const sweepInterval = setInterval(() => {
     const resolveNode = (nodeId: string) => registry().resolveNode(nodeId);
-    sweepExpiredRules(resolveNode).catch((err: Error) =>
-      log.warn({ err: err.message }, "sweep failed"),
-    );
+    sweepExpiredRules(resolveNode)
+      .then(async (expired) => {
+        // Retry UFW deletes that failed earlier (here or in revoke/swap
+        // paths) — runs after the sweep so this round's failures queue first.
+        const r = await retryPendingDeletes(resolveNode);
+        if (expired > 0 || r.retried > 0) {
+          log.info({ expiredRules: expired, pendingDeletes: r }, "firewall sweep");
+        }
+      })
+      .catch((err: Error) => log.warn({ err: err.message }, "sweep failed"));
     sweepExpiredSessions().catch((err: Error) =>
       log.warn({ err: err.message }, "admin session sweep failed"),
     );

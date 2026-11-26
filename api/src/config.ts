@@ -85,6 +85,7 @@ export type Config = z.infer<typeof ConfigSchema> & {
   servicesFile: string;
   usersFile: string;
   firewallRulesFile: string;
+  ufwPendingDeletesFile: string;
   statsFile: string;
   auditLog: string;
   adminCredentialsFile: string;
@@ -136,6 +137,7 @@ export function loadConfig(): Config {
     servicesFile: c.SERVICES_FILE ?? join(dataDir, "services.json"),
     usersFile: c.USERS_FILE ?? join(dataDir, "users.json"),
     firewallRulesFile: c.FIREWALL_RULES_FILE ?? join(dataDir, "firewall-rules.json"),
+    ufwPendingDeletesFile: join(dataDir, "ufw-pending-deletes.json"),
     statsFile: c.STATS_FILE ?? join(dataDir, "stats.json"),
     auditLog: c.AUDIT_LOG ?? join(dataDir, "audit.log"),
     adminCredentialsFile: c.ADMIN_CREDENTIALS_FILE ?? join(dataDir, "admin-credentials.json"),

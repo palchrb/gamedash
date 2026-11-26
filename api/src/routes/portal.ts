@@ -59,6 +59,7 @@ import type { UserRecord } from "../schemas";
 
 const PWA_DIR = path.resolve(__dirname, "..", "..", "pwa");
 const WEBAUTHN_JS = path.resolve(__dirname, "..", "..", "public", "webauthn.js");
+const PLAY_SHARED_JS = path.resolve(__dirname, "..", "..", "public", "play-shared.js");
 
 let cachedLandingTemplate: string | null = null;
 function renderLanding(params: {
@@ -498,6 +499,9 @@ export function portalRouter(): Router {
   });
   router.get("/my/u.css", (_req, res) => {
     res.type("text/css").sendFile(path.join(PWA_DIR, "u.css"));
+  });
+  router.get("/my/play-shared.js", (_req, res) => {
+    res.type("application/javascript").sendFile(PLAY_SHARED_JS);
   });
   router.get("/my/webauthn.js", (_req, res) => {
     res.type("application/javascript").sendFile(WEBAUTHN_JS);

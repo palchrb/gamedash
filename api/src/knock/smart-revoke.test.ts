@@ -261,3 +261,44 @@ describe("revokeUser", () => {
     expect(result.removed).toBe(false);
   });
 });
+
+describe("merge keeps the services snapshot complete", () => {
+  const twoServiceRegistry = {
+    ...fakeRegistry,
+    collectPortsByNode: (ids?: readonly string[] | null) => {
+      const ports = [];
+      if (!ids || ids.includes("mc1")) ports.push({ port: "25565", proto: "tcp" as const });
+      if (!ids || ids.includes("amongus")) ports.push({ port: "22023", proto: "udp" as const });
+      return new Map([["local", ports]]);
+    },
+    buildRuleServices: (ids?: readonly string[] | null) => {
+      const all = [
+        { id: "mc1", ports: [{ port: "25565", proto: "tcp" as const }], node: "local" },
+        { id: "amongus", ports: [{ port: "22023", proto: "udp" as const }], node: "local" },
+      ];
+      return ids && ids.length ? all.filter((s) => ids.includes(s.id)) : all;
+    },
+  } as unknown as Registry;
+
+  it("re-knocking a different service from the same IP unions the snapshot and allows the new port", async () => {
+    const { ufwAllowMany } = await import("../firewall/ufw");
+    const user = { ...fakeUser, allowedServices: ["mc1", "amongus"] };
+    await knockUser(user, ["203.0.113.5"], ["mc1"], twoServiceRegistry);
+    vi.mocked(ufwAllowMany).mockClear();
+
+    const r = await knockUser(user, ["203.0.113.5"], ["amongus"], twoServiceRegistry);
+    expect(r.status).toBe("ok");
+
+    // The existing IP must be allowed on the newly requested port.
+    const allowedPorts = vi
+      .mocked(ufwAllowMany)
+      .mock.calls.flatMap(([ips, byNode]) =>
+        [...byNode.values()].flat().map((p) => `${ips.join(",")}@${p.port}/${p.proto}`),
+      );
+    expect(allowedPorts).toContain("203.0.113.5@22023/udp");
+
+    // Snapshot keeps BOTH services so revoke/expiry later deletes both.
+    const rules = await loadRules();
+    expect(rules.rules[0]!.services.map((s) => s.id).sort()).toEqual(["amongus", "mc1"]);
+  });
+});
