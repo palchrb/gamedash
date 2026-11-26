@@ -87,3 +87,27 @@ describe("ufwDeleteMany retry queue", () => {
     expect(vi.mocked(sidecarUfwDelete)).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("ufw ops are sequential per node", () => {
+  it("never has two in-flight ufw calls against the same node", async () => {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    vi.mocked(sidecarUfwDelete).mockImplementation(async () => {
+      inFlight++;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise((r) => setTimeout(r, 2));
+      inFlight--;
+    });
+    await ufwDeleteMany(
+      ["203.0.113.1", "2001:db8::1"],
+      new Map([["local", [
+        { port: "25565", proto: "tcp" as const },
+        { port: "19132", proto: "udp" as const },
+        { port: "22023", proto: "udp" as const },
+      ]]]),
+      resolveNode,
+    );
+    expect(vi.mocked(sidecarUfwDelete)).toHaveBeenCalledTimes(6);
+    expect(maxInFlight).toBe(1);
+  });
+});

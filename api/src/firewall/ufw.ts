@@ -22,29 +22,50 @@ export interface UfwError {
   error: string;
 }
 
+type SidecarUfwOp = typeof sidecarUfwAllow;
+
+/**
+ * Run one ufw op for every (ip × port) — SEQUENTIALLY within a node,
+ * in parallel across nodes. ufw is not concurrency-safe: parallel runs
+ * on the same host overwrite each other's rule-file writes, and rules
+ * disappear silently (the sidecar serializes too, as a second guard).
+ * Returns one UfwError per failed (ip, port).
+ */
+async function runPerNode(
+  op: SidecarUfwOp,
+  label: "allow" | "delete",
+  ips: readonly string[],
+  portsByNode: ReadonlyMap<string, readonly PortSpec[]>,
+  resolveNode: (nodeId: string) => NodeConfig,
+): Promise<UfwError[]> {
+  const perNode = await Promise.all(
+    Array.from(portsByNode.entries()).map(async ([nodeId, ports]) => {
+      const errors: UfwError[] = [];
+      for (const ip of ips) {
+        for (const { port, proto } of ports) {
+          try {
+            // resolveNode inside the try: an unknown/removed node fails
+            // its own ops instead of aborting the whole batch.
+            await op(resolveNode(nodeId), ip, port, proto);
+          } catch (err) {
+            const msg = (err as Error).message;
+            logger().warn({ node: nodeId, ip, port, proto, err: msg }, `ufw ${label} failed`);
+            errors.push({ node: nodeId, ip, port, proto, error: msg });
+          }
+        }
+      }
+      return errors;
+    }),
+  );
+  return perNode.flat();
+}
+
 export async function ufwAllowMany(
   ips: readonly string[],
   portsByNode: ReadonlyMap<string, readonly PortSpec[]>,
   resolveNode: (nodeId: string) => NodeConfig,
 ): Promise<UfwError[]> {
-  const results = await Promise.allSettled(
-    Array.from(portsByNode.entries()).flatMap(([nodeId, ports]) => {
-      const node = resolveNode(nodeId);
-      return ips.flatMap((ip) =>
-        ports.map(async ({ port, proto }) => {
-          try {
-            await sidecarUfwAllow(node, ip, port, proto);
-          } catch (err) {
-            logger().warn({ node: nodeId, ip, port, proto, err: (err as Error).message }, "ufw allow failed");
-            throw { node: nodeId, ip, port, proto, error: (err as Error).message };
-          }
-        }),
-      );
-    }),
-  );
-  return results
-    .filter((r): r is PromiseRejectedResult => r.status === "rejected")
-    .map((r) => r.reason as UfwError);
+  return runPerNode(sidecarUfwAllow, "allow", ips, portsByNode, resolveNode);
 }
 
 /**
@@ -59,25 +80,7 @@ export async function ufwDeleteMany(
   portsByNode: ReadonlyMap<string, readonly PortSpec[]>,
   resolveNode: (nodeId: string) => NodeConfig,
 ): Promise<UfwError[]> {
-  const results = await Promise.allSettled(
-    Array.from(portsByNode.entries()).flatMap(([nodeId, ports]) =>
-      ips.flatMap((ip) =>
-        ports.map(async ({ port, proto }) => {
-          try {
-            // resolveNode inside the try: an unknown/removed node must
-            // fail this one delete (and get queued), not abort the batch.
-            await sidecarUfwDelete(resolveNode(nodeId), ip, port, proto);
-          } catch (err) {
-            logger().warn({ node: nodeId, ip, port, proto, err: (err as Error).message }, "ufw delete failed");
-            throw { node: nodeId, ip, port, proto, error: (err as Error).message };
-          }
-        }),
-      ),
-    ),
-  );
-  const errors = results
-    .filter((r): r is PromiseRejectedResult => r.status === "rejected")
-    .map((r) => r.reason as UfwError);
+  const errors = await runPerNode(sidecarUfwDelete, "delete", ips, portsByNode, resolveNode);
   if (errors.length > 0) {
     try {
       await enqueuePendingDeletes(errors);

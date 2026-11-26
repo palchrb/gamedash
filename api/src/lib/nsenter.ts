@@ -53,7 +53,10 @@ export async function sidecarUfwAllow(
   await sidecarFetch(node, "/ufw/allow", {
     method: "POST",
     body: { ip, port, proto },
-    timeoutMs: 5_000,
+    // A single ufw run reloads the whole ruleset; on small ARM hosts
+    // that can take seconds. Calls are sequential per node (see
+    // firewall/ufw.ts), so this is per command, not per batch.
+    timeoutMs: 20_000,
   });
 }
 
@@ -66,7 +69,10 @@ export async function sidecarUfwDelete(
   await sidecarFetch(node, "/ufw/delete", {
     method: "POST",
     body: { ip, port, proto },
-    timeoutMs: 5_000,
+    // A single ufw run reloads the whole ruleset; on small ARM hosts
+    // that can take seconds. Calls are sequential per node (see
+    // firewall/ufw.ts), so this is per command, not per batch.
+    timeoutMs: 20_000,
   });
 }
 

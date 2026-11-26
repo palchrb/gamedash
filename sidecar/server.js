@@ -90,6 +90,18 @@ function nsenter(args, timeoutMs) {
   });
 }
 
+// ── ufw serialization ───────────────────────────────────────────────
+// ufw is not safe to run concurrently: each invocation reads
+// user.rules, appends its rule, writes the file back and reloads.
+// Parallel runs overwrite each other and rules vanish silently. All
+// ufw mutations go through this single-file queue.
+let ufwChain = Promise.resolve();
+function serialUfw(args) {
+  const run = ufwChain.then(() => nsenter(args, CMD_TIMEOUT_MS));
+  ufwChain = run.catch(() => {});
+  return run;
+}
+
 // ── Docker helper (via DOCKER_HOST or DOCKER_PROXY_URL) ─────────────
 
 function dockerExec(args, timeoutMs) {
@@ -112,9 +124,8 @@ function dockerExec(args, timeoutMs) {
 async function handleUfwAllow(body) {
   const err = validateUfwBody(body);
   if (err) return { status: 400, body: { success: false, error: err } };
-  await nsenter(
+  await serialUfw(
     ["ufw", "route", "allow", "from", body.ip, "to", "any", "port", body.port, "proto", body.proto],
-    CMD_TIMEOUT_MS,
   );
   return { status: 200, body: { success: true } };
 }
@@ -122,9 +133,8 @@ async function handleUfwAllow(body) {
 async function handleUfwDelete(body) {
   const err = validateUfwBody(body);
   if (err) return { status: 400, body: { success: false, error: err } };
-  await nsenter(
+  await serialUfw(
     ["ufw", "route", "delete", "allow", "from", body.ip, "to", "any", "port", body.port, "proto", body.proto],
-    CMD_TIMEOUT_MS,
   );
   return { status: 200, body: { success: true } };
 }
